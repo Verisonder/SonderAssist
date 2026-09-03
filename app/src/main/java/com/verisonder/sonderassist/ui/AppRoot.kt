@@ -71,6 +71,7 @@ fun AppRoot(activity: ComponentActivity) {
     var backgroundName by remember { mutableStateOf(Settings.backgroundUri(activity)?.lastPathSegment) }
     var readout by remember { mutableStateOf(WatchService.lastVerdict) }
     var batteryExempt by remember { mutableStateOf(Keepalive.isBatteryExempt(activity)) }
+    var canOverlay by remember { mutableStateOf(AndroidSettings.canDrawOverlays(activity)) }
 
     val pickAudio = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -120,6 +121,7 @@ fun AppRoot(activity: ComponentActivity) {
                 hasLock = DeviceAdminLocker.hasLockScreen(activity)
                 watching = WatchService.isRunning
                 batteryExempt = Keepalive.isBatteryExempt(activity)
+                canOverlay = AndroidSettings.canDrawOverlays(activity)
             }
         }
         owner.lifecycle.addObserver(observer)
@@ -369,6 +371,31 @@ fun AppRoot(activity: ComponentActivity) {
                         onClick = { activity.startActivity(Keepalive.batteryExemptionIntent(activity)) },
                         modifier = Modifier.fillMaxWidth(),
                     ) { Text("Stop Android from sleeping it") }
+                }
+
+                if (!canOverlay) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        // On several skins this is what actually decides whether the
+                        // alert screen is allowed to open from the background.
+                        "The alert screen may not appear unless SonderAssist can draw " +
+                            "over other apps. The lock and the sound work either way.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            runCatching {
+                                activity.startActivity(
+                                    Intent(
+                                        AndroidSettings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                        android.net.Uri.parse("package:${activity.packageName}"),
+                                    )
+                                )
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Allow the alert to show") }
                 }
 
                 val autostart = remember { Keepalive.autostartIntent(activity) }

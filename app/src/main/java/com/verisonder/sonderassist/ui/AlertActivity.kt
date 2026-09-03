@@ -4,10 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.media.AudioAttributes
-import android.media.AudioManager
-import android.media.MediaPlayer
-import android.media.RingtoneManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -45,16 +41,11 @@ import com.verisonder.sonderassist.ui.theme.SonderAssistTheme
  */
 class AlertActivity : ComponentActivity() {
 
-    private var player: MediaPlayer? = null
-    private var previousAlarmVolume: Int? = null
-
     /**
-     * The alarm waits, and the wait is the whole design.
+     * Unlocking is the only way out of this screen.
      *
-     * The detector fires on thin evidence because a wrong lock costs one fingerprint
-     * touch. A wrong lock that immediately blares in a quiet room costs far more, and
-     * would silently invert the trade the thresholds were chosen under. Someone who knows
-     * the PIN stops it before it makes a sound; someone who does not, cannot.
+     * Not a button, because a button is one a thief can press too. Only someone who knows
+     * the PIN can dismiss it, which is the same test the alarm uses to fall silent.
      */
     private val unlocked = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -62,6 +53,12 @@ class AlertActivity : ComponentActivity() {
         }
     }
 
+    /**
+     * The alarm is not started here.
+     *
+     * It used to be, and that coupled the sound to a window Android often refuses to
+     * open in the background. WatchService owns it now; this screen is only the message.
+     */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setShowWhenLocked(true)
@@ -126,76 +123,6 @@ class AlertActivity : ComponentActivity() {
             }
         }
 
-        if (Settings.alarmEnabled(this)) scheduleAlarm()
-    }
-
-    private fun scheduleAlarm() {
-        val delayMs = Settings.graceSeconds(this) * 1000L
-        window.decorView.postDelayed({ if (!isFinishing) startAlarm() }, delayMs)
-    }
-
-    private fun startAlarm() {
-        val audio = getSystemService(AudioManager::class.java)
-        // The alarm stream, not the ringer, because a phone worth taking is very often on
-        // silent and a siren nobody can hear is decoration.
-        previousAlarmVolume = audio.getStreamVolume(AudioManager.STREAM_ALARM)
-        runCatching {
-            audio.setStreamVolume(
-                AudioManager.STREAM_ALARM,
-                audio.getStreamMaxVolume(AudioManager.STREAM_ALARM),
-                0,
-            )
-        }
-
-        val uri = Settings.alarmUri(this)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-        val repeats = Settings.alarmRepeats(this)
-        var played = 0
-
-        player = runCatching {
-            MediaPlayer().apply {
-                setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ALARM)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-                        .build()
-                )
-                setDataSource(this@AlertActivity, uri)
-                // Counted rather than looped. isLooping runs until something stops it,
-                // and the only thing that stopped it was unlocking the phone — so a
-                // false alarm nobody was near went on until the battery or the neighbours
-                // gave out. A count ends on its own; the message stays on screen either
-                // way, which is the part that has to persist.
-                isLooping = false
-                setOnCompletionListener {
-                    played++
-                    if (played < repeats && !isFinishing) {
-                        runCatching { seekTo(0); start() }
-                    } else {
-                        restoreVolume()
-                    }
-                }
-                prepare()
-                start()
-            }
-        }.getOrNull()
-    }
-
-    /**
-     * Put the alarm volume back where it was.
-     *
-     * Called when the sound finishes on its own as well as on the way out, because the
-     * screen can sit there long after the noise has stopped and leaving the phone's alarm
-     * volume pinned at maximum is not this app's business.
-     */
-    private fun restoreVolume() {
-        previousAlarmVolume?.let { volume ->
-            runCatching {
-                getSystemService(AudioManager::class.java)
-                    .setStreamVolume(AudioManager.STREAM_ALARM, volume, 0)
-            }
-        }
-        previousAlarmVolume = null
     }
 
     /** Back does not dismiss this. Only unlocking does. */
@@ -204,9 +131,6 @@ class AlertActivity : ComponentActivity() {
 
     override fun onDestroy() {
         runCatching { unregisterReceiver(unlocked) }
-        player?.runCatching { stop(); release() }
-        player = null
-        restoreVolume()
         super.onDestroy()
     }
 }

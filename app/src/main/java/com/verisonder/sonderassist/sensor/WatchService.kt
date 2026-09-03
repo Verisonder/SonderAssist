@@ -16,6 +16,7 @@ import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.R
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.detect.Sample
+import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 
@@ -50,7 +51,16 @@ class WatchService : Service(), SensorEventListener {
     private val screenEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_USER_PRESENT -> startListening()
+                Intent.ACTION_USER_PRESENT -> {
+                    // Unlocking is the one thing that proves the owner is holding it, so
+                    // it is what silences the alarm — whether or not the alert screen
+                    // ever managed to open.
+                    Alarm.stop()
+                    getSystemService(NotificationManager::class.java)
+                        .cancel(ALERT_NOTIFICATION_ID)
+                    startListening()
+                }
+
                 Intent.ACTION_SCREEN_OFF -> stopListening()
             }
         }
@@ -93,6 +103,7 @@ class WatchService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         isRunning = false
+        Alarm.stop()
         stopListening()
         runCatching { unregisterReceiver(screenEvents) }
         super.onDestroy()
@@ -164,12 +175,61 @@ class WatchService : Service(), SensorEventListener {
         // into the next session and could fire again the moment the phone is unlocked.
         stopListening()
         DeviceAdminLocker.lockNow(this)
-        // Started after the lock, not before: the alert draws over the keyguard, and
-        // showing it first would put it in front of an unlocked phone.
-        startActivity(
-            Intent(this, com.verisonder.sonderassist.ui.AlertActivity::class.java)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+
+        // The sound does not depend on the screen appearing. It used to, and on a real
+        // theft — where the app is not in the foreground — the screen is exactly what
+        // Android refuses to open.
+        Alarm.scheduleAfterGrace(this)
+
+        showAlert()
+    }
+
+    /**
+     * Get the alert screen up from the background.
+     *
+     * A plain startActivity is silently dropped: since Android 10 an app in the
+     * background may not launch an activity, and a foreground service does not change
+     * that. It appeared to work only while SonderAssist happened to be in the foreground,
+     * which is precisely the case during testing and never the case during a theft.
+     *
+     * A full-screen intent is the sanctioned route — the one alarm clocks and incoming
+     * calls use. The notification is posted and the system decides; if it declines, the
+     * notification is still there on the lock screen and the alarm is still sounding.
+     * The direct start is kept as well, because when it is allowed it is instant.
+     */
+    private fun showAlert() {
+        val intent = Intent(this, com.verisonder.sonderassist.ui.AlertActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val pending = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                android.app.PendingIntent.FLAG_IMMUTABLE,
         )
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(
+                ALERT_CHANNEL_ID,
+                getString(R.string.alert_channel),
+                // A full-screen intent is ignored on anything below HIGH.
+                NotificationManager.IMPORTANCE_HIGH,
+            )
+        )
+        manager.notify(
+            ALERT_NOTIFICATION_ID,
+            NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+                .setContentTitle(getString(R.string.alert_notification))
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(pending, true)
+                .setAutoCancel(true)
+                .build(),
+        )
+
+        runCatching { startActivity(intent) }
     }
 
     // ---------------------------------------------------------------- notification
@@ -195,6 +255,8 @@ class WatchService : Service(), SensorEventListener {
     companion object {
         private const val CHANNEL_ID = "watch"
         private const val NOTIFICATION_ID = 1
+        private const val ALERT_CHANNEL_ID = "alert"
+        private const val ALERT_NOTIFICATION_ID = 2
 
         /**
          * Whether the service is actually alive, as opposed to whether the person asked
