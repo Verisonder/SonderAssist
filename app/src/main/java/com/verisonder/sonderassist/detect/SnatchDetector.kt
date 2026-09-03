@@ -7,75 +7,81 @@ import kotlin.math.sqrt
  * Decides whether the phone was just pulled out of a hand.
  *
  * Scope, narrowly: **a grab from the hand, with no getaway.** Android's own Theft
- * Detection Lock already covers snatch-then-run, and it covers it with a model trained on
- * more data than this will ever see. What it does not cover is the case where the thief
+ * Detection Lock already covers snatch-then-run. What it does not cover is the thief who
  * simply walks off, or steps through a closing train door, because it waits for running,
- * biking or driving before it acts. That waiting is the gap, and this closes it by acting
- * on the grab itself.
+ * biking or driving before it acts. That waiting is the gap; this closes it by acting on
+ * the grab itself.
  *
- * **Being wrong is cheap and that shapes everything here.** Google ships to a billion
- * phones, so a false lock is a support burden and they must tune for near-zero. A false
- * lock here costs one fingerprint touch. So this deliberately fires on evidence that
- * would be far too thin for a platform feature, and the tuning target is "never miss a
- * real grab", not "never fire wrongly".
+ * **Being wrong is cheap and that shapes everything here.** A platform feature shipping to
+ * a billion phones must tune for almost no false alarms. A false lock here costs one
+ * fingerprint touch, so this fires on evidence that would be far too thin for Google, and
+ * the tuning target is "never miss a real grab" rather than "never fire wrongly".
  *
- * ### The signature
+ * ### The geometry, which is the whole idea
  *
- * A phone leaving a hand against resistance is not the same shape as a phone being put
- * down, handed over, or pocketed:
+ * The hand grips the **bottom** of the phone. The thief takes the **top** and pulls up and
+ * away. That is not one possibility among many — it is how the grip works. A hand wrapped
+ * around the lower half opens toward the top, so the only direction the phone can leave is
+ * along its own long axis, out through the top edge. Real pulls spread perhaps forty
+ * degrees either side of it and never reverse it.
  *
- * 1. **A jerk transient.** Jerk is the derivative of acceleration, and it is the
- *    discriminator — not acceleration itself, which a brisk normal movement matches
- *    easily. Fingers grip, the phone is pulled, the grip fails, and the acceleration
- *    changes almost discontinuously.
- * 2. **A rotation burst.** A grab is never on the centre of mass. The phone pivots out of
- *    the grip, so the gyroscope sees a spike alongside the jerk. Setting a phone down
- *    flat produces jerk with very little rotation.
- * 3. **Motion that does not settle.** Whatever happens next, the phone does not come to
- *    rest. A put-down does, a bump on a desk does, a phone tossed onto a sofa does within
- *    about a second.
+ * So the trigger is not the size of the jerk but **its direction in the phone's own
+ * frame**: a sharp positive transient along +Y, the axis running from the bottom edge to
+ * the top edge. That is a far narrower target than raw magnitude, and most of what a phone
+ * does in an ordinary day — set down, pocketed, carried, handed over — does not produce it.
  *
- * ### What is deliberately rejected
+ * ### Why rotation is evidence and not a requirement
  *
- * - **A drop.** Free fall reads near zero g, which nothing in a hand-to-hand grab does.
- *   A dropped phone is not a stolen phone and locking on it would train the owner to
- *   distrust the app.
- * - **Anything that settles** inside the confirmation window.
- * - **Anything while not in a hand.** A phone lying on a table has almost no variance;
- *   a held phone always carries tremor. Grabbing from a table is a real case, but it is a
- *   different signature and belongs in its own detector rather than being bolted on here.
+ * A grab off the centre of mass makes the phone pivot about the hand and the gyroscope
+ * sees it. But a pull straight along the long axis runs directly through that pivot, so it
+ * generates almost no torque and almost no rotation — and that is the middle case of
+ * three. A detector that required rotation would sail past it. Rotation therefore lowers
+ * the jerk needed rather than gating on it.
+ *
+ * ### Gravity
+ *
+ * Removed with a low-pass estimate rather than by using TYPE_LINEAR_ACCELERATION, whose
+ * fusion smooths away the sharp transient this exists to find. The estimate also gives the
+ * phone's tilt for free, which is what keeps "+Y in the phone's frame" meaningful while it
+ * is held at any angle.
  *
  * ### Tuning
  *
- * Every threshold lives in [Tuning] and none of the defaults are trustworthy yet — they
- * are starting points from the physics, not from data. The way to set them is to record
- * real traces with the capture screen, replay them here, and move the numbers until the
- * grabs fire and the put-downs do not. Until that has happened, treat every default in
- * this file as a guess.
+ * **Every default in [Tuning] is a guess** from the physics, not from data. Record traces,
+ * replay them here, and move the numbers until the grabs fire and the ordinary day does
+ * not. Until then, treat every number in this file as fiction.
  */
 class SnatchDetector(private val tuning: Tuning = Tuning()) {
 
     /**
-     * @param jerkThreshold m/s³. Normal handling — pocketing, passing, gesturing — sits
-     *   well under 100. A grab against a closed grip is an order of magnitude above it.
-     * @param rotationThreshold rad/s. Roughly a third of a turn per second.
-     * @param confirmWindowMs how long after the spike the phone has to keep moving. Long
-     *   enough to rule out a put-down, short enough that the lock still beats the thief's
-     *   thumb.
-     * @param settledAccelBand m/s² either side of gravity. Inside it, the phone is still.
+     * @param axialJerk m/s³ along +Y. The trigger, reached alone only by a hard pull.
+     * @param axialJerkWithRotation the lower bar that applies when the phone is also
+     *   pivoting, because two signals agreeing beat one strong one.
+     * @param rotationSupport rad/s above which rotation counts as agreeing.
+     * @param minAxialAccel m/s² of actual pull along +Y. Rejects a knock, which spikes the
+     *   derivative without the phone going anywhere.
+     * @param confirmWindowMs how long the phone must keep moving after the transient.
+     * @param settledAccelBand m/s² either side of gravity, inside which it is still.
      * @param settledRotation rad/s below which there is no meaningful rotation.
-     * @param heldTremorMin m/s² of variation over the recent window. Below this the
-     *   phone is resting on something, not held.
-     * @param heldTremorMax above this the phone is already being moved about, and a
-     *   "grab" cannot be told from the movement already happening.
-     * @param freeFallCeiling m/s². Below it the device is falling and this is a drop.
-     * @param freeFallMs how long that has to hold to count as a real fall rather than a
-     *   sampling artefact.
-     * @param windowMs the trailing window the held/tremor statistics are computed over.
+     * @param heldTremorMin m/s² of variation. Below it the phone rests on something.
+     * @param heldTremorMax above it the phone is already being waved about, where a grab
+     *   cannot be told from the motion already happening.
+     * @param freeFallCeiling m/s². Below it the device is falling: a drop, not a theft.
+     * @param freeFallMs how long that must hold to be a fall and not a sampling artefact.
+     * @param windowMs the trailing window the held statistics are computed over.
+     * @param gravityAlpha low-pass coefficient for the gravity estimate. The time constant
+     *   is roughly `sampleInterval / (1 - alpha)`, so at 100 Hz this is about half a
+     *   second — slow enough to ignore a pull, fast enough to follow the phone being
+     *   tilted. **This is not a free parameter.** At 0.85 the constant is 67 ms, which is
+     *   the same order as the transient itself: the filter then tracks the pull, subtracts
+     *   it as though it were gravity, and the straight axial grab silently stops firing.
+     *   That was the behaviour before it was measured.
      */
     data class Tuning(
-        val jerkThreshold: Float = 450f,
-        val rotationThreshold: Float = 2.0f,
+        val axialJerk: Float = 600f,
+        val axialJerkWithRotation: Float = 350f,
+        val rotationSupport: Float = 1.5f,
+        val minAxialAccel: Float = 6f,
         val confirmWindowMs: Long = 700,
         val settledAccelBand: Float = 0.6f,
         val settledRotation: Float = 0.35f,
@@ -84,33 +90,35 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val freeFallCeiling: Float = 3.0f,
         val freeFallMs: Long = 120,
         val windowMs: Long = 900,
-        /**
-         * Require the gyroscope to agree. Turned off automatically for a device with no
-         * gyroscope, where jerk alone has to carry the decision — worse, but better than
-         * refusing to run.
-         */
-        val requireRotation: Boolean = true,
+        val gravityAlpha: Float = 0.98f,
     )
 
     sealed interface Verdict {
-        /** Nothing of interest. Includes the phone not being in a hand at all. */
+        /** Nothing of interest, including the phone not being in a hand. */
         data object Idle : Verdict
 
         /** Held, and being watched. */
         data object Watching : Verdict
 
-        /** A spike has been seen and the confirmation window is running. */
-        data class Candidate(val jerk: Float, val rotation: Float) : Verdict
+        /** A transient has been seen and the confirmation window is running. */
+        data class Candidate(val axialJerk: Float, val rotation: Float) : Verdict
 
         /** Fire. Lock the screen. */
-        data class Snatch(val jerk: Float, val rotation: Float, val atNs: Long) : Verdict
+        data class Snatch(val axialJerk: Float, val rotation: Float, val atNs: Long) : Verdict
 
-        /** A candidate that did not survive the window, kept for the trace viewer. */
+        /** A candidate that did not survive its window, kept for the trace viewer. */
         data class Rejected(val reason: String) : Verdict
     }
 
     private val window = ArrayDeque<Sample>()
     private var previous: Sample? = null
+    private var previousAxial = 0f
+
+    // Gravity in the device frame, so +Y stays meaningful at any holding angle.
+    private var gravityX = 0f
+    private var gravityY = 0f
+    private var gravityZ = 0f
+    private var gravitySeeded = false
 
     private var candidateAtNs = 0L
     private var candidateJerk = 0f
@@ -118,24 +126,23 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
     private var inCandidate = false
     private var freeFallSinceNs = 0L
 
-    /** Latest verdict, so a UI can show what the detector currently thinks. */
     var verdict: Verdict = Verdict.Idle
         private set
 
     fun reset() {
         window.clear()
         previous = null
+        previousAxial = 0f
+        gravitySeeded = false
         inCandidate = false
         freeFallSinceNs = 0L
         verdict = Verdict.Idle
     }
 
     /**
-     * Feed one sample. Returns the verdict for this sample.
-     *
-     * Samples must arrive in order. Out-of-order or duplicate timestamps are dropped
-     * rather than producing a divide by zero in the jerk — sensor batching can deliver
-     * two events with the same timestamp and the resulting infinity would fire instantly.
+     * Feed one sample, in order. Out-of-order and duplicate timestamps are dropped rather
+     * than dividing by a zero interval, which would give an infinite jerk and fire
+     * instantly — sensor batching really does deliver two events stamped the same.
      */
     fun accept(sample: Sample): Verdict {
         val last = previous
@@ -145,7 +152,18 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val cutoff = sample.timestampNs - tuning.windowMs * 1_000_000
         while (window.isNotEmpty() && window.first().timestampNs < cutoff) window.removeFirst()
 
-        val jerk = if (last == null) 0f else jerkBetween(last, sample)
+        updateGravity(sample)
+        // Linear acceleration along the long axis. Positive is "toward the top edge",
+        // which is the one direction the phone can leave a hand gripping the bottom.
+        val axial = sample.ay - gravityY
+
+        val jerk = if (last == null) {
+            0f
+        } else {
+            val seconds = (sample.timestampNs - last.timestampNs) / 1_000_000_000.0
+            if (seconds <= 0.0) 0f else ((axial - previousAxial) / seconds).toFloat()
+        }
+        previousAxial = axial
         previous = sample
 
         trackFreeFall(sample)
@@ -161,8 +179,13 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         }
 
         val rotation = sample.rotationMagnitude
-        val rotationAgrees = !tuning.requireRotation || rotation >= tuning.rotationThreshold
-        if (jerk >= tuning.jerkThreshold && rotationAgrees) {
+        val bar = if (rotation >= tuning.rotationSupport) {
+            tuning.axialJerkWithRotation
+        } else {
+            tuning.axialJerk
+        }
+
+        if (jerk >= bar && axial >= tuning.minAxialAccel) {
             inCandidate = true
             candidateAtNs = sample.timestampNs
             candidateJerk = jerk
@@ -180,7 +203,6 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
     private fun judgeCandidate(sample: Sample): Verdict {
         val elapsedMs = (sample.timestampNs - candidateAtNs) / 1_000_000
 
-        // A fall that began around the spike means the phone was dropped, not taken.
         if (freeFallSinceNs != 0L &&
             (sample.timestampNs - freeFallSinceNs) / 1_000_000 >= tuning.freeFallMs
         ) {
@@ -201,6 +223,25 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         return Verdict.Candidate(candidateJerk, candidateRotation)
     }
 
+    /**
+     * Low-pass toward the current reading, seeded from the first sample rather than from
+     * zero. A filter starting at zero spends its first second climbing to gravity and
+     * reports a metre per second squared of pull that is not there.
+     */
+    private fun updateGravity(sample: Sample) {
+        if (!gravitySeeded) {
+            gravityX = sample.ax
+            gravityY = sample.ay
+            gravityZ = sample.az
+            gravitySeeded = true
+            return
+        }
+        val a = tuning.gravityAlpha
+        gravityX = a * gravityX + (1 - a) * sample.ax
+        gravityY = a * gravityY + (1 - a) * sample.ay
+        gravityZ = a * gravityZ + (1 - a) * sample.az
+    }
+
     private fun trackFreeFall(sample: Sample) {
         if (sample.accelMagnitude < tuning.freeFallCeiling) {
             if (freeFallSinceNs == 0L) freeFallSinceNs = sample.timestampNs
@@ -214,18 +255,13 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
             sample.rotationMagnitude <= tuning.settledRotation
 
     /**
-     * Whether the phone looks like it is in a hand.
-     *
-     * A hand is never still. Resting on a table the standard deviation of the
-     * acceleration magnitude is near zero; held, it is small but always present. The
-     * upper bound matters as much as the lower: if the phone is already being swung
-     * about, a grab is not distinguishable from what is already happening, and firing
-     * there is how an app earns a reputation for locking at random.
+     * Whether the phone looks like it is in a hand. A hand is never still: on a table the
+     * deviation of the acceleration magnitude is near zero, held it is small but always
+     * present. The upper bound matters as much as the lower.
      */
     private fun isHeld(): Boolean {
         if (window.size < MIN_WINDOW_SAMPLES) return false
-        val deviation = magnitudeDeviation()
-        return deviation in tuning.heldTremorMin..tuning.heldTremorMax
+        return magnitudeDeviation() in tuning.heldTremorMin..tuning.heldTremorMax
     }
 
     private fun magnitudeDeviation(): Float {
@@ -238,15 +274,6 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
             variance += d * d
         }
         return sqrt(variance / window.size).toFloat()
-    }
-
-    private fun jerkBetween(a: Sample, b: Sample): Float {
-        val seconds = (b.timestampNs - a.timestampNs) / 1_000_000_000.0
-        if (seconds <= 0.0) return 0f
-        val dx = b.ax - a.ax
-        val dy = b.ay - a.ay
-        val dz = b.az - a.az
-        return (sqrt((dx * dx + dy * dy + dz * dz).toDouble()) / seconds).toFloat()
     }
 
     private companion object {

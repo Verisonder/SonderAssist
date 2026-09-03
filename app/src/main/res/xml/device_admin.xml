@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    force-lock and nothing else.
+
+    The activation screen lists every policy declared here, so anything extra is something
+    the user is asked to agree to for no reason. Password policies, camera disabling and
+    keyguard restrictions were all deprecated for legacy device admins anyway; force-lock
+    was not, because it is what a lost-or-stolen response needs.
+-->
+<device-admin xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-policies>
+        <force-lock />
+    </uses-policies>
+</device-admin>

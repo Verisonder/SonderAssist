@@ -1,6 +1,7 @@
 <resources>
     <string name="app_name">SonderAssist</string>
-    <string name="accessibility_description">Lets SonderAssist turn on the lock screen when it detects the phone being taken from your hand. It does not read the screen, your apps, or anything you type — it performs one action and nothing else.</string>
+    <string name="admin_label">Lock the screen</string>
+    <string name="admin_description">Lets SonderAssist turn on the lock screen when it detects the phone being taken from your hand. This is the only thing it is allowed to do.</string>
     <string name="watch_channel">Watching</string>
     <string name="watch_notification">Watching for a grab</string>
 </resources>

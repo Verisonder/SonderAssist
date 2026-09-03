@@ -55,21 +55,27 @@
         </service>
 
         <!--
-            The only way to reach the lock screen without Device Admin. It performs one
-            global action and reads nothing: see accessibility_service_config, which asks
-            for no event types and no window content.
+            Device Admin, declaring force-lock and nothing else.
+
+            Not an accessibility service: those are unreliable on several OEM skins, and a
+            protection that stops working after a reboot without saying so is worse than
+            none. force-lock survived Google's device admin deprecation because enterprise
+            management depends on it, and that same dependency is why an OEM cannot
+            quietly break it.
         -->
-        <service
-            android:name=".security.ScreenLockService"
-            android:exported="false"
-            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
-            <intent-filter>
-                <action android:name="android.accessibilityservice.AccessibilityService" />
-            </intent-filter>
+        <receiver
+            android:name=".security.AdminReceiver"
+            android:exported="true"
+            android:label="@string/admin_label"
+            android:description="@string/admin_description"
+            android:permission="android.permission.BIND_DEVICE_ADMIN">
             <meta-data
-                android:name="android.accessibilityservice"
-                android:resource="@xml/accessibility_service_config" />
-        </service>
+                android:name="android.app.device_admin"
+                android:resource="@xml/device_admin" />
+            <intent-filter>
+                <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

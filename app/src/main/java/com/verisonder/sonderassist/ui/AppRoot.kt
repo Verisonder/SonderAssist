@@ -28,7 +28,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
-import com.verisonder.sonderassist.security.ScreenLockService
+import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.sensor.WatchService
 
 /**
@@ -41,14 +41,16 @@ import com.verisonder.sonderassist.sensor.WatchService
  */
 @Composable
 fun AppRoot(activity: ComponentActivity) {
-    var granted by remember { mutableStateOf(ScreenLockService.isGranted(activity)) }
+    var granted by remember { mutableStateOf(DeviceAdminLocker.isReady(activity)) }
+    var hasLock by remember { mutableStateOf(DeviceAdminLocker.hasLockScreen(activity)) }
     var armed by remember { mutableStateOf(false) }
 
     val owner = LocalLifecycleOwner.current
     DisposableEffect(owner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                granted = ScreenLockService.isGranted(activity)
+                granted = DeviceAdminLocker.isReady(activity)
+                hasLock = DeviceAdminLocker.hasLockScreen(activity)
             }
         }
         owner.lifecycle.addObserver(observer)
@@ -72,24 +74,38 @@ fun AppRoot(activity: ComponentActivity) {
 
             Spacer(Modifier.height(24.dp))
 
-            if (!granted) {
-                Text("Not armed", style = MaterialTheme.typography.titleMedium)
+            if (!hasLock) {
+                // Without a PIN, pattern or password, lockNow puts the device to sleep
+                // but does not secure it: the screen goes off and comes straight back on
+                // with everything visible. Claiming to protect the phone in that state
+                // would be a lie, so it is said plainly instead.
+                Text("Set a screen lock first", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(8.dp))
                 Text(
-                    "SonderAssist needs permission to turn on the lock screen. Android " +
-                        "grants that through accessibility settings, and the screen it " +
-                        "shows warns that the app can observe everything you do. It " +
-                        "cannot: it reads no screen content and performs one action. " +
-                        "Android shows the same warning for every app of this kind.",
+                    "This phone has no PIN, pattern or password. SonderAssist can turn " +
+                        "the screen off, but there would be nothing to stop whoever has " +
+                        "the phone turning it straight back on.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(16.dp))
                 Button(
-                    onClick = {
-                        activity.startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
-                    },
+                    onClick = { activity.startActivity(Intent(Settings.ACTION_SECURITY_SETTINGS)) },
                     modifier = Modifier.fillMaxWidth(),
-                ) { Text("Open accessibility settings") }
+                ) { Text("Open security settings") }
+            } else if (!granted) {
+                Text("Not armed", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "SonderAssist needs permission to turn on the lock screen. The next " +
+                        "screen lists what it is allowed to do: lock the screen, and " +
+                        "nothing else. You can take it back at any time from here.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(16.dp))
+                Button(
+                    onClick = { activity.startActivity(DeviceAdminLocker.activationIntent(activity)) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Give permission") }
             } else {
                 Text(if (armed) "Watching" else "Ready", style = MaterialTheme.typography.titleMedium)
                 Spacer(Modifier.height(16.dp))
@@ -100,6 +116,20 @@ fun AppRoot(activity: ComponentActivity) {
                     },
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (armed) "Stop watching" else "Start watching") }
+
+                Spacer(Modifier.height(12.dp))
+                // An active device admin blocks uninstall, so giving it up has to be one
+                // tap from here. An anti-theft app that is awkward to remove is one people
+                // warn each other about.
+                OutlinedButton(
+                    onClick = {
+                        WatchService.stop(activity)
+                        armed = false
+                        DeviceAdminLocker.deactivate(activity)
+                        granted = false
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text("Turn off protection") }
             }
 
             Spacer(Modifier.height(32.dp))

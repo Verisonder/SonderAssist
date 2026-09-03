@@ -16,19 +16,43 @@ This is not battery tuning that happens to be convenient. When the screen is off
 is already locked and there is nothing left to protect, so the window where a grab costs
 anything is exactly the window where the app listens. Everything else follows from that.
 
+## The geometry, which is the whole idea
+
+The hand grips the **bottom** of the phone. The thief takes the **top** and pulls up and
+away. That is not one possibility among several — it is how the grip works. A hand wrapped
+around the lower half opens toward the top, so the only direction the phone can leave is
+along its own long axis, out through the top edge. Real pulls spread perhaps forty degrees
+either side of it and never reverse it.
+
+So the trigger is not the size of the jerk but **its direction in the phone's own frame**:
+a sharp positive transient along +Y, from the bottom edge toward the top. That is a far
+narrower target than raw magnitude, and most of what a phone does in an ordinary day does
+not produce it.
+
 ## The signature
 
-A phone leaving a hand against resistance is not shaped like a phone being put down,
-handed over, or pocketed.
+1. **A positive axial jerk.** The derivative of the linear acceleration along +Y. Jerk
+   rather than acceleration, because any brisk normal movement matches acceleration.
+2. **A real pull, not just a spike.** The acceleration itself must also be sustained along
+   +Y. A knock against the phone spikes the derivative without the phone going anywhere.
+3. **Rotation, as evidence rather than a gate.** An off-axis grab pivots the phone about
+   the hand and the gyroscope sees it — but a pull straight up the long axis runs through
+   that pivot, produces almost no torque, and is the middle of the three directions. So
+   rotation *lowers the jerk needed* instead of being required.
+4. **Motion that does not settle.** A put-down comes to rest inside about a second. A phone
+   in someone else's hand does not.
 
-1. **A jerk transient.** Jerk — the derivative of acceleration — is the discriminator, not
-   acceleration, which any brisk normal movement matches. Fingers grip, the phone is
-   pulled, the grip fails, and acceleration changes almost discontinuously.
-2. **A rotation burst.** A grab is never on the centre of mass, so the phone pivots out of
-   the grip and the gyroscope spikes alongside. A phone set down flat produces jerk with
-   almost no rotation.
-3. **Motion that does not settle.** A put-down comes to rest inside about a second. A
-   phone in someone else's hand does not.
+## Gravity
+
+Removed with a low-pass estimate, not `TYPE_LINEAR_ACCELERATION`, whose fusion smooths
+away the transient this exists to find. The estimate also gives the tilt, which is what
+keeps "+Y in the phone's frame" meaningful at any holding angle.
+
+**`gravityAlpha` is not a free parameter.** The time constant is roughly
+`sampleInterval / (1 - alpha)`. At 0.85 and 100 Hz that is 67 ms — the same order as the
+transient itself, so the filter tracks the pull, subtracts it as though it were gravity,
+and the straight axial grab silently stops firing. It was set to 0.85 first and the
+failure was found by replaying the fixtures. 0.98 gives about half a second.
 
 ## What is rejected
 
@@ -36,7 +60,8 @@ handed over, or pocketed.
 |---|---|
 | Put down on a table | Settles inside the confirmation window |
 | Dropped | Free fall reads near zero g, which no hand-to-hand grab does |
-| Straight shove | Jerk without rotation |
+| Yanked downward | Negative axial transient — the grip does not open that way |
+| Knocked | Derivative spikes but the acceleration is not sustained |
 | Phone on a table | No tremor — a held phone always carries some |
 | Already being waved about | Tremor above the upper bound, where a grab is indistinguishable |
 
@@ -71,9 +96,8 @@ estimate, and the smoothing removes precisely the sharp transient this looks for
 transient lasting tens of milliseconds. `FASTEST` buys nothing at this scale and costs
 battery for the whole session.
 
-The gyroscope is optional. Without one the detector runs on jerk alone, which is worse, and
-`Tuning.requireRotation` is set to false so the app says so rather than quietly changing
-behaviour.
+The gyroscope is optional. Without one the axial channel carries the decision alone and
+every grab has to clear the higher bar, which is worse but still works.
 
 ## Still to decide
 

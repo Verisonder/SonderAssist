@@ -16,7 +16,7 @@ import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.R
 import com.verisonder.sonderassist.detect.Sample
 import com.verisonder.sonderassist.detect.SnatchDetector
-import com.verisonder.sonderassist.security.ScreenLockService
+import com.verisonder.sonderassist.security.DeviceAdminLocker
 
 /**
  * Watches the motion sensors while the phone is unlocked and in use.
@@ -144,7 +144,7 @@ class WatchService : Service(), SensorEventListener {
         // detector still being fed during the lock would carry the tail of this event
         // into the next session and could fire again the moment the phone is unlocked.
         stopListening()
-        ScreenLockService.lockNow()
+        DeviceAdminLocker.lockNow(this)
     }
 
     // ---------------------------------------------------------------- notification
