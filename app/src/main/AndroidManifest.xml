@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!--
+        No INTERNET permission. Motion data describes where the phone has been and how it
+        is carried, which is as personal as anything this app could hold, and the simplest
+        way to promise it goes nowhere is to make it impossible.
+    -->
+
+    <!-- The watch has to survive the screen going on and off and the app not being in
+         front, which on Android means a foreground service with a visible notification. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
+    <!-- Not required: the detector can fall back to jerk alone, worse but working. -->
+    <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+
+    <application
+        android:name=".SonderAssistApp"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:icon="@mipmap/ic_launcher"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.SonderAssist">
+
+        <activity
+            android:name=".ui.MainActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|uiMode"
+            android:theme="@style/Theme.SonderAssist">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!--
+            specialUse rather than a stock type: none of the defined foreground service
+            types describes "watch the accelerometer for a theft". Declaring one that does
+            not fit would be a lie to the platform.
+        -->
+        <service
+            android:name=".sensor.WatchService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Detects the phone being taken from the user's hand and locks the screen." />
+        </service>
+
+        <!--
+            The only way to reach the lock screen without Device Admin. It performs one
+            global action and reads nothing: see accessibility_service_config, which asks
+            for no event types and no window content.
+        -->
+        <service
+            android:name=".security.ScreenLockService"
+            android:exported="false"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/accessibility_service_config" />
+        </service>
+
+    </application>
+
+</manifest>

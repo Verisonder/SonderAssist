@@ -1,0 +1,11 @@
+<!-- Placeholder mark. Replaced by a generated asset once there is a logo, the same way
+     SonderVault's is produced from docs/logo.png. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M39,34 L45,34 L45,74 L39,74 Z M63,34 L69,34 L69,74 L63,74 Z M45,34 L69,58 L69,66 L45,42 Z" />
+</vector>

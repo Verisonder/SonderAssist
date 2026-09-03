@@ -1,0 +1,43 @@
+name: Checks
+
+on:
+  push:
+    branches: [main, 'test/**']
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Unit tests and debug build
+        shell: bash
+        run: |
+          set -o pipefail
+          gradle --no-daemon testDebugUnitTest assembleDebug 2>&1 | tee build-output.txt
+      - name: Report the failure
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.ARTIFACTS_PAT }}
+        run: |
+          # CI logs are not fetchable from the assistant's container, so the compiler
+          # error is written where the API can read it rather than being guessed at.
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::ARTIFACTS_PAT is not set, so the failure was not reported."
+            exit 0
+          fi
+          SHA=$(gh api repos/Verisonder/vs-artifacts/contents/failures/latest.txt --jq .sha 2>/dev/null || true)
+          gh api -X PUT repos/Verisonder/vs-artifacts/contents/failures/latest.txt \
+            -f message="SonderAssist checks failure on $GITHUB_REF_NAME" \
+            -f content="$(base64 -w0 build-output.txt)" \
+            ${SHA:+-f sha="$SHA"}
