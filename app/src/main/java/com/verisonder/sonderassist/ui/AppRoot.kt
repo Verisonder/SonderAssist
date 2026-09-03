@@ -42,6 +42,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
+import com.verisonder.sonderassist.security.Keepalive
 import com.verisonder.sonderassist.sensor.WatchService
 
 /**
@@ -69,6 +70,7 @@ fun AppRoot(activity: ComponentActivity) {
     var confirmRemove by remember { mutableStateOf(false) }
     var backgroundName by remember { mutableStateOf(Settings.backgroundUri(activity)?.lastPathSegment) }
     var readout by remember { mutableStateOf(WatchService.lastVerdict) }
+    var batteryExempt by remember { mutableStateOf(Keepalive.isBatteryExempt(activity)) }
 
     val pickAudio = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -117,6 +119,7 @@ fun AppRoot(activity: ComponentActivity) {
                 granted = DeviceAdminLocker.isReady(activity)
                 hasLock = DeviceAdminLocker.hasLockScreen(activity)
                 watching = WatchService.isRunning
+                batteryExempt = Keepalive.isBatteryExempt(activity)
             }
         }
         owner.lifecycle.addObserver(observer)
@@ -198,6 +201,24 @@ fun AppRoot(activity: ComponentActivity) {
                     onValueChangeFinished = { Settings.setSensitivity(activity, sensitivity) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+                // The numbers, not just an adjective. They are what the slider actually
+                // moves, and without them "balanced" means nothing that can be compared
+                // between two phones or two attempts.
+                val tuned = remember(sensitivity) {
+                    com.verisonder.sonderassist.detect.SnatchDetector.Tuning
+                        .forSensitivity(sensitivity)
+                }
+                Text(
+                    "Needs a jerk of %,.0f, or %,.0f if the phone twists as it goes."
+                        .format(tuned.axialJerk, tuned.axialJerkWithRotation),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    "Plus a shove of at least %.1f m/s² toward the top of the phone."
+                        .format(tuned.minAxialAccel),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(6.dp))
                 Text(
                     "Takes effect the next time you unlock the phone.",
                     style = MaterialTheme.typography.bodyMedium,
@@ -326,6 +347,47 @@ fun AppRoot(activity: ComponentActivity) {
                             modifier = Modifier.fillMaxWidth(),
                         )
                     }
+                }
+
+                Spacer(Modifier.height(28.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(28.dp))
+
+                SectionLabel("Keeping it running")
+                Text(
+                    if (batteryExempt) {
+                        "Battery optimisation is off for SonderAssist."
+                    } else {
+                        "Android may stop SonderAssist to save battery. It only runs " +
+                            "while the screen is on, so the cost is small."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                if (!batteryExempt) {
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = { activity.startActivity(Keepalive.batteryExemptionIntent(activity)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Stop Android from sleeping it") }
+                }
+
+                val autostart = remember { Keepalive.autostartIntent(activity) }
+                if (autostart != null) {
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        // No API exists to read or request this, so the app cannot say
+                        // whether it is already on. Pretending to know would be worse
+                        // than admitting it does not.
+                        "This phone also has its own autostart list. SonderAssist cannot " +
+                            "see whether it is on, so it is worth checking by hand — " +
+                            "without it the app will not come back after a restart.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(
+                        onClick = { runCatching { activity.startActivity(autostart) } },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) { Text("Open autostart settings") }
                 }
 
                 Spacer(Modifier.height(40.dp))
