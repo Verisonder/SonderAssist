@@ -13,7 +13,23 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!--
+        Asked for, not assumed. Without it several OEM skins kill the foreground service
+        anyway, and a protection that has quietly stopped is worse than one that is
+        honestly off.
+    -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!--
+        A full-screen intent is the sanctioned way to put a screen up from the background;
+        a plain startActivity is silently dropped on Android 10 and above.
+    -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <!--
+        Not required, but on several skins it is what actually lets the alert appear.
+        Asked for from the app, never assumed.
+    -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
     <!-- Not required: the detector can fall back to jerk alone, worse but working. -->
@@ -74,6 +90,34 @@
                 android:resource="@xml/device_admin" />
             <intent-filter>
                 <action android:name="android.app.action.DEVICE_ADMIN_ENABLED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            The screen shown over the keyguard after a lock. excludeFromRecents and
+            noHistory so it cannot be found again by someone paging through recents, and
+            singleTask so a second detection reuses the one already showing.
+        -->
+        <activity
+            android:name=".ui.AlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:showOnLockScreen="true"
+            android:theme="@style/Theme.SonderAssist" />
+
+        <!--
+            RECEIVE_BOOT_COMPLETED was declared from the first commit with nothing behind
+            it, so the app was dead after every reboot until someone opened it.
+        -->
+        <receiver
+            android:name=".sensor.BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
             </intent-filter>
         </receiver>
 

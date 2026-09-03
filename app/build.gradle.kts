@@ -14,24 +14,31 @@ android {
         // the entire point of the app. Below that there is nothing to ship.
         minSdk = 28
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1"
+        versionCode = 2
+        versionName = "1"
     }
 
     signingConfigs {
         create("release") {
             // Supplied by CI from repository secrets. Absent locally, which is why the
             // release build type falls back to the debug key below rather than failing.
-            val storeFilePath = System.getenv("RELEASE_STORE_FILE")
-            if (storeFilePath != null) {
+            //
+            // Every value is trimmed. A secret pasted from a table or a terminal picks up
+            // a leading tab or a trailing newline without showing anything, and the
+            // failure lands at packageRelease as "No key with alias ' sonderassist'" —
+            // which reads like the alias is wrong rather than like it has a tab on it.
+            // That cost a release. Nothing here can legitimately contain outer
+            // whitespace, so trimming has no downside.
+            val storeFilePath = System.getenv("RELEASE_STORE_FILE")?.trim()
+            if (!storeFilePath.isNullOrEmpty()) {
                 storeFile = file(storeFilePath)
-                storePassword = System.getenv("RELEASE_STORE_PASSWORD")
-                keyAlias = System.getenv("RELEASE_KEY_ALIAS")
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD")?.trim()
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS")?.trim()
                 // PKCS12 keystores ignore a separate key password: it always equals the
                 // store password. Setting them differently fails at packageRelease with
                 // "Given final block not properly padded", which reads like a code bug.
-                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")
-                    ?: System.getenv("RELEASE_STORE_PASSWORD")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD")?.trim()
+                    ?: System.getenv("RELEASE_STORE_PASSWORD")?.trim()
             }
         }
     }

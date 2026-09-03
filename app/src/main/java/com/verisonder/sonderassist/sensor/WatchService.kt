@@ -14,7 +14,9 @@ import android.hardware.SensorManager
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.R
+import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.detect.Sample
+import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 
@@ -33,7 +35,10 @@ class WatchService : Service(), SensorEventListener {
     private var accelerometer: Sensor? = null
     private var gyroscope: Sensor? = null
 
-    private val detector = SnatchDetector()
+    // Rebuilt from the sensitivity setting each time the watch starts, so a change on
+    // the slider takes effect the next time the phone is unlocked rather than needing
+    // the service restarted.
+    private var detector = SnatchDetector()
     private var listening = false
 
     // The gyroscope arrives on its own schedule, so the latest reading is held and
@@ -46,7 +51,16 @@ class WatchService : Service(), SensorEventListener {
     private val screenEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
-                Intent.ACTION_USER_PRESENT -> startListening()
+                Intent.ACTION_USER_PRESENT -> {
+                    // Unlocking is the one thing that proves the owner is holding it, so
+                    // it is what silences the alarm — whether or not the alert screen
+                    // ever managed to open.
+                    Alarm.stop()
+                    getSystemService(NotificationManager::class.java)
+                        .cancel(ALERT_NOTIFICATION_ID)
+                    startListening()
+                }
+
                 Intent.ACTION_SCREEN_OFF -> stopListening()
             }
         }
@@ -84,9 +98,12 @@ class WatchService : Service(), SensorEventListener {
             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         startListening()
+        isRunning = true
     }
 
     override fun onDestroy() {
+        isRunning = false
+        Alarm.stop()
         stopListening()
         runCatching { unregisterReceiver(screenEvents) }
         super.onDestroy()
@@ -99,7 +116,9 @@ class WatchService : Service(), SensorEventListener {
     private fun startListening() {
         if (listening) return
         val accel = accelerometer ?: return
-        detector.reset()
+        detector = SnatchDetector(
+            SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this))
+        )
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
         // rate buys nothing at this scale and costs battery for the whole session.
@@ -134,7 +153,18 @@ class WatchService : Service(), SensorEventListener {
                         gx = gx, gy = gy, gz = gz,
                     )
                 )
-                if (verdict is SnatchDetector.Verdict.Snatch) onSnatch()
+                lastVerdict = when (verdict) {
+                    is SnatchDetector.Verdict.Idle -> "not in a hand"
+                    is SnatchDetector.Verdict.Watching -> "watching"
+                    is SnatchDetector.Verdict.Candidate ->
+                        "possible grab (jerk %.0f)".format(verdict.axialJerk)
+                    is SnatchDetector.Verdict.Rejected -> "rejected: ${verdict.reason}"
+                    is SnatchDetector.Verdict.Snatch -> "locked"
+                }
+                if (verdict is SnatchDetector.Verdict.Snatch) {
+                    lastFiredAt = System.currentTimeMillis()
+                    onSnatch()
+                }
             }
         }
     }
@@ -145,6 +175,61 @@ class WatchService : Service(), SensorEventListener {
         // into the next session and could fire again the moment the phone is unlocked.
         stopListening()
         DeviceAdminLocker.lockNow(this)
+
+        // The sound does not depend on the screen appearing. It used to, and on a real
+        // theft — where the app is not in the foreground — the screen is exactly what
+        // Android refuses to open.
+        Alarm.scheduleAfterGrace(this)
+
+        showAlert()
+    }
+
+    /**
+     * Get the alert screen up from the background.
+     *
+     * A plain startActivity is silently dropped: since Android 10 an app in the
+     * background may not launch an activity, and a foreground service does not change
+     * that. It appeared to work only while SonderAssist happened to be in the foreground,
+     * which is precisely the case during testing and never the case during a theft.
+     *
+     * A full-screen intent is the sanctioned route — the one alarm clocks and incoming
+     * calls use. The notification is posted and the system decides; if it declines, the
+     * notification is still there on the lock screen and the alarm is still sounding.
+     * The direct start is kept as well, because when it is allowed it is instant.
+     */
+    private fun showAlert() {
+        val intent = Intent(this, com.verisonder.sonderassist.ui.AlertActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        val pending = android.app.PendingIntent.getActivity(
+            this,
+            0,
+            intent,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or
+                android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        val manager = getSystemService(NotificationManager::class.java)
+        manager.createNotificationChannel(
+            NotificationChannel(
+                ALERT_CHANNEL_ID,
+                getString(R.string.alert_channel),
+                // A full-screen intent is ignored on anything below HIGH.
+                NotificationManager.IMPORTANCE_HIGH,
+            )
+        )
+        manager.notify(
+            ALERT_NOTIFICATION_ID,
+            NotificationCompat.Builder(this, ALERT_CHANNEL_ID)
+                .setContentTitle(getString(R.string.alert_notification))
+                .setSmallIcon(android.R.drawable.ic_lock_lock)
+                .setPriority(NotificationCompat.PRIORITY_MAX)
+                .setCategory(NotificationCompat.CATEGORY_ALARM)
+                .setFullScreenIntent(pending, true)
+                .setAutoCancel(true)
+                .build(),
+        )
+
+        runCatching { startActivity(intent) }
     }
 
     // ---------------------------------------------------------------- notification
@@ -170,6 +255,33 @@ class WatchService : Service(), SensorEventListener {
     companion object {
         private const val CHANNEL_ID = "watch"
         private const val NOTIFICATION_ID = 1
+        private const val ALERT_CHANNEL_ID = "alert"
+        private const val ALERT_NOTIFICATION_ID = 2
+
+        /**
+         * Whether the service is actually alive, as opposed to whether the person asked
+         * for it. The screen used to keep a local flag that reset on every recomposition,
+         * so the button could say "Start watching" while it was running and the reverse
+         * after the system killed it — which is indistinguishable from the feature
+         * failing at random.
+         */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
+
+        /**
+         * What the detector last thought, for the readout on the main screen.
+         *
+         * Guessing at why a grab did not fire costs a build and a round trip each time.
+         * The phone already knows; it just had no way to say so.
+         */
+        @Volatile
+        var lastVerdict: String = "—"
+            private set
+
+        @Volatile
+        var lastFiredAt: Long = 0L
+            private set
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, WatchService::class.java))
