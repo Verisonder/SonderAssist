@@ -142,7 +142,18 @@ class WatchService : Service(), SensorEventListener {
                         gx = gx, gy = gy, gz = gz,
                     )
                 )
-                if (verdict is SnatchDetector.Verdict.Snatch) onSnatch()
+                lastVerdict = when (verdict) {
+                    is SnatchDetector.Verdict.Idle -> "not in a hand"
+                    is SnatchDetector.Verdict.Watching -> "watching"
+                    is SnatchDetector.Verdict.Candidate ->
+                        "possible grab (jerk %.0f)".format(verdict.axialJerk)
+                    is SnatchDetector.Verdict.Rejected -> "rejected: ${verdict.reason}"
+                    is SnatchDetector.Verdict.Snatch -> "locked"
+                }
+                if (verdict is SnatchDetector.Verdict.Snatch) {
+                    lastFiredAt = System.currentTimeMillis()
+                    onSnatch()
+                }
             }
         }
     }
@@ -194,6 +205,20 @@ class WatchService : Service(), SensorEventListener {
          */
         @Volatile
         var isRunning: Boolean = false
+            private set
+
+        /**
+         * What the detector last thought, for the readout on the main screen.
+         *
+         * Guessing at why a grab did not fire costs a build and a round trip each time.
+         * The phone already knows; it just had no way to say so.
+         */
+        @Volatile
+        var lastVerdict: String = "—"
+            private set
+
+        @Volatile
+        var lastFiredAt: Long = 0L
             private set
 
         fun start(context: Context) {

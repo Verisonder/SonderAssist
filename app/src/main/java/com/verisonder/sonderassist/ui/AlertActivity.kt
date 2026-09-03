@@ -11,7 +11,11 @@ import android.media.RingtoneManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -20,6 +24,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.verisonder.sonderassist.Settings
@@ -68,12 +75,30 @@ class AlertActivity : ComponentActivity() {
         )
 
         val message = Settings.message(this)
+        // Decoded once, here, rather than in composition: this screen appears at the
+        // worst possible moment and must not be waiting on a decode to draw.
+        val background = Settings.backgroundUri(this)?.let { uri ->
+            runCatching {
+                contentResolver.openInputStream(uri).use { android.graphics.BitmapFactory.decodeStream(it) }
+            }.getOrNull()?.asImageBitmap()
+        }
+
         setContent {
             SonderAssistTheme {
-                Surface(
-                    modifier = Modifier.fillMaxSize(),
-                    color = MaterialTheme.colorScheme.errorContainer,
-                ) {
+                Box(modifier = Modifier.fillMaxSize()) {
+                    if (background != null) {
+                        Image(
+                            bitmap = background,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Surface(
+                            modifier = Modifier.fillMaxSize(),
+                            color = MaterialTheme.colorScheme.errorContainer,
+                        ) {}
+                    }
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -84,8 +109,17 @@ class AlertActivity : ComponentActivity() {
                         Text(
                             message,
                             style = MaterialTheme.typography.headlineMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
+                            // Over a picture the theme colour is a coin toss, so the text
+                            // carries its own contrast: white on a dark scrim behind it.
+                            color = if (background != null) Color.White else MaterialTheme.colorScheme.onErrorContainer,
                             textAlign = TextAlign.Center,
+                            modifier = if (background != null) {
+                                Modifier
+                                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+                                    .padding(16.dp)
+                            } else {
+                                Modifier
+                            },
                         )
                     }
                 }

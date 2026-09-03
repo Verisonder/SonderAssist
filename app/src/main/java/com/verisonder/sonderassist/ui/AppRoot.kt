@@ -18,8 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +65,8 @@ fun AppRoot(activity: ComponentActivity) {
     var message by remember { mutableStateOf(Settings.message(activity)) }
     var alarmName by remember { mutableStateOf(Settings.alarmUri(activity)?.lastPathSegment) }
     var confirmRemove by remember { mutableStateOf(false) }
+    var backgroundName by remember { mutableStateOf(Settings.backgroundUri(activity)?.lastPathSegment) }
+    var readout by remember { mutableStateOf(WatchService.lastVerdict) }
 
     val pickAudio = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -81,6 +81,30 @@ fun AppRoot(activity: ComponentActivity) {
             }
             Settings.setAlarmUri(activity, uri)
             alarmName = uri.lastPathSegment
+        }
+    }
+
+    val pickImage = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            runCatching {
+                activity.contentResolver.takePersistableUriPermission(
+                    uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+                )
+            }
+            Settings.setBackgroundUri(activity, uri)
+            backgroundName = uri.lastPathSegment
+        }
+    }
+
+    // Polls while the screen is open, and only while it is open. The detector already
+    // knows why it did or did not fire; there was simply no way for it to say so, and
+    // guessing at that from a description costs a build each time.
+    androidx.compose.runtime.LaunchedEffect(watching) {
+        while (watching) {
+            readout = WatchService.lastVerdict
+            kotlinx.coroutines.delay(300)
         }
     }
 
@@ -143,6 +167,15 @@ fun AppRoot(activity: ComponentActivity) {
                     },
                 )
 
+                if (watching) {
+                    Spacer(Modifier.height(12.dp))
+                    Text(
+                        "Right now: $readout",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+
                 Spacer(Modifier.height(32.dp))
                 SectionLabel("Sensitivity")
                 Text(
@@ -189,6 +222,24 @@ fun AppRoot(activity: ComponentActivity) {
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = { Settings.setMessage(activity, message) }) {
                     Text("Save message")
+                }
+
+                Spacer(Modifier.height(20.dp))
+                Text(
+                    backgroundName?.let { "Background: $it" } ?: "Background: plain colour",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(8.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilledTonalButton(onClick = { pickImage.launch(arrayOf("image/*")) }) {
+                        Text("Choose a picture")
+                    }
+                    if (backgroundName != null) {
+                        TextButton(onClick = {
+                            Settings.setBackgroundUri(activity, null)
+                            backgroundName = null
+                        }) { Text("Use plain") }
+                    }
                 }
 
                 Spacer(Modifier.height(20.dp))
@@ -318,46 +369,33 @@ fun AppRoot(activity: ComponentActivity) {
     }
 }
 
+/**
+ * No card, no tinted container.
+ *
+ * The filled card was an addition nobody asked for and it put a pale block across the top
+ * of a dark screen. Status is carried by the words and the button, on the same background
+ * as everything else.
+ */
 @Composable
 private fun StatusCard(watching: Boolean, onToggle: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (watching) {
-                MaterialTheme.colorScheme.primaryContainer
+    Column(modifier = Modifier.fillMaxWidth()) {
+        Text(
+            if (watching) "Watching" else "Not watching",
+            style = MaterialTheme.typography.titleMedium,
+        )
+        Spacer(Modifier.height(4.dp))
+        Text(
+            if (watching) {
+                "The screen locks if the phone is pulled out of your hand."
             } else {
-                MaterialTheme.colorScheme.surfaceContainerHigh
+                "Nothing is being watched for."
             },
-        ),
-    ) {
-        Column(modifier = Modifier.padding(20.dp)) {
-            Text(
-                if (watching) "Watching" else "Not watching",
-                style = MaterialTheme.typography.headlineMedium,
-                color = if (watching) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                if (watching) {
-                    "The screen locks if the phone is pulled out of your hand."
-                } else {
-                    "Nothing is being watched for."
-                },
-                style = MaterialTheme.typography.bodyMedium,
-                color = if (watching) {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-            )
-            Spacer(Modifier.height(16.dp))
-            Button(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
-                Text(if (watching) "Stop watching" else "Start watching")
-            }
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Spacer(Modifier.height(16.dp))
+        Button(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
+            Text(if (watching) "Stop watching" else "Start watching")
         }
     }
 }

@@ -69,6 +69,9 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
      * @param freeFallCeiling m/s². Below it the device is falling: a drop, not a theft.
      * @param freeFallMs how long that must hold to be a fall and not a sampling artefact.
      * @param windowMs the trailing window the held statistics are computed over.
+     * @param heldLagMs how far back that window ends. Samples newer than this are left
+     *   out of the held check entirely, so the event being judged cannot decide whether
+     *   the phone was in a hand before it.
      * @param gravityAlpha low-pass coefficient for the gravity estimate. The time constant
      *   is roughly `sampleInterval / (1 - alpha)`, so at 100 Hz this is about half a
      *   second — slow enough to ignore a pull, fast enough to follow the phone being
@@ -86,10 +89,15 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val settledAccelBand: Float = 0.6f,
         val settledRotation: Float = 0.35f,
         val heldTremorMin: Float = 0.06f,
-        val heldTremorMax: Float = 4.5f,
+        // Raised from 4.5 after measuring: three volume presses inside one window reach
+        // about 4.3, which is close enough to the old ceiling to blind the detector at
+        // the exact moment someone is handling the phone. The lag below is the real fix;
+        // this is the margin.
+        val heldTremorMax: Float = 7.0f,
         val freeFallCeiling: Float = 3.0f,
         val freeFallMs: Long = 120,
         val windowMs: Long = 900,
+        val heldLagMs: Long = 250,
         val gravityAlpha: Float = 0.98f,
     ) {
         companion object {
@@ -173,7 +181,9 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         if (last != null && sample.timestampNs <= last.timestampNs) return verdict
 
         window.addLast(sample)
-        val cutoff = sample.timestampNs - tuning.windowMs * 1_000_000
+        // Long enough to hold the lag as well as the span being measured, or the lagged
+        // window would be permanently empty and nothing would ever be judged held.
+        val cutoff = sample.timestampNs - (tuning.windowMs + tuning.heldLagMs) * 1_000_000
         while (window.isNotEmpty() && window.first().timestampNs < cutoff) window.removeFirst()
 
         updateGravity(sample)
@@ -197,7 +207,7 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
             return verdict
         }
 
-        if (!isHeld()) {
+        if (!isHeld(sample.timestampNs)) {
             verdict = Verdict.Idle
             return verdict
         }
@@ -279,25 +289,37 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
             sample.rotationMagnitude <= tuning.settledRotation
 
     /**
-     * Whether the phone looks like it is in a hand. A hand is never still: on a table the
-     * deviation of the acceleration magnitude is near zero, held it is small but always
-     * present. The upper bound matters as much as the lower.
+     * Whether the phone looks like it was in a hand, **just before now**.
+     *
+     * A hand is never still: on a table the deviation of the acceleration magnitude is
+     * near zero, held it is small but always present. The upper bound matters as much as
+     * the lower, because a phone already being waved about gives a grab nothing to stand
+     * out against.
+     *
+     * **The window ends `heldLagMs` ago, and that is the fix for a real bug.** Measured up
+     * to the present, a single sharp impulse — a firm tap on the screen, a volume button
+     * press — pushed the deviation over the ceiling, so the detector answered "not in a
+     * hand" and ignored everything for the rest of the window. Touch the phone, get it
+     * snatched a moment later, and nothing fired. The event being judged must not get a
+     * vote on whether the phone was held before it happened.
      */
-    private fun isHeld(): Boolean {
-        if (window.size < MIN_WINDOW_SAMPLES) return false
-        return magnitudeDeviation() in tuning.heldTremorMin..tuning.heldTremorMax
+    private fun isHeld(now: Long): Boolean {
+        val cutoff = now - tuning.heldLagMs * 1_000_000
+        val settled = window.filter { it.timestampNs <= cutoff }
+        if (settled.size < MIN_WINDOW_SAMPLES) return false
+        return magnitudeDeviation(settled) in tuning.heldTremorMin..tuning.heldTremorMax
     }
 
-    private fun magnitudeDeviation(): Float {
+    private fun magnitudeDeviation(samples: List<Sample>): Float {
         var sum = 0.0
-        for (s in window) sum += s.accelMagnitude
-        val mean = sum / window.size
+        for (s in samples) sum += s.accelMagnitude
+        val mean = sum / samples.size
         var variance = 0.0
-        for (s in window) {
+        for (s in samples) {
             val d = s.accelMagnitude - mean
             variance += d * d
         }
-        return sqrt(variance / window.size).toFloat()
+        return sqrt(variance / samples.size).toFloat()
     }
 
     private companion object {

@@ -20,6 +20,7 @@ object Settings {
     private const val ALARM_URI = "alarm_uri"
     private const val GRACE_SECONDS = "grace_seconds"
     private const val MESSAGE = "message"
+    private const val BACKGROUND_URI = "background_uri"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -80,6 +81,16 @@ object Settings {
 
     fun setGraceSeconds(context: Context, value: Int) {
         of(context).edit().putInt(GRACE_SECONDS, value.coerceIn(0, 60)).apply()
+    }
+
+    /** Null means the plain colour background rather than a picture. */
+    fun backgroundUri(context: Context): Uri? =
+        of(context).getString(BACKGROUND_URI, null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
+
+    fun setBackgroundUri(context: Context, uri: Uri?) {
+        of(context).edit().apply {
+            if (uri == null) remove(BACKGROUND_URI) else putString(BACKGROUND_URI, uri.toString())
+        }.apply()
     }
 
     fun message(context: Context): String =
