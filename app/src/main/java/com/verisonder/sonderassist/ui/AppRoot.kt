@@ -23,6 +23,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -122,6 +123,11 @@ fun AppRoot(activity: ComponentActivity) {
         onDispose { owner.lifecycle.removeObserver(observer) }
     }
 
+    // The Surface is load-bearing, not decoration. It sets the background *and*
+    // LocalContentColor to onSurface; without it every unstyled Text falls back to
+    // Compose's default of black, which on a dark background reads as washed out and
+    // half-legible. Dropping it during a rewrite is what made the screen look grey.
+    Surface(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -173,7 +179,6 @@ fun AppRoot(activity: ComponentActivity) {
                     Text(
                         "Right now: $readout",
                         style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -186,7 +191,6 @@ fun AppRoot(activity: ComponentActivity) {
                         else -> "Balanced. Move it either way once you know how it behaves."
                     },
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Slider(
                     value = sensitivity,
@@ -257,7 +261,6 @@ fun AppRoot(activity: ComponentActivity) {
                         Text(
                             "Plays on the alarm channel, so it is heard even on silent.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                     Switch(
@@ -297,7 +300,6 @@ fun AppRoot(activity: ComponentActivity) {
                         Text(
                             "Then it stops on its own. The message stays on screen.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Slider(
                             value = repeats.toFloat(),
@@ -315,7 +317,6 @@ fun AppRoot(activity: ComponentActivity) {
                             "The screen locks straight away. The sound waits, so you can " +
                                 "unlock a false alarm before it makes a noise.",
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Slider(
                             value = grace.toFloat(),
@@ -350,7 +351,6 @@ fun AppRoot(activity: ComponentActivity) {
                     "Android will not let you uninstall SonderAssist while it can lock " +
                         "the screen. Remove that permission first, then uninstall normally.",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 Spacer(Modifier.height(8.dp))
                 TextButton(onClick = { confirmRemove = true }) {
@@ -359,6 +359,7 @@ fun AppRoot(activity: ComponentActivity) {
                 Spacer(Modifier.height(32.dp))
             }
         }
+    }
     }
 
     if (confirmRemove) {
@@ -410,7 +411,6 @@ private fun StatusCard(watching: Boolean, onToggle: () -> Unit) {
                 "Nothing is being watched for."
             },
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
         Spacer(Modifier.height(16.dp))
         Button(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
@@ -424,11 +424,7 @@ private fun Blocker(title: String, detail: String, action: String, onAction: () 
     Column {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(8.dp))
-        Text(
-            detail,
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        Text(detail, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(20.dp))
         Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) { Text(action) }
     }
