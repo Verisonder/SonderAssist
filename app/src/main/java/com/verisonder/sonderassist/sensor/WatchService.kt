@@ -33,7 +33,7 @@ class WatchService : Service(), SensorEventListener {
     private var accelerometer: Sensor? = null
     private var gyroscope: Sensor? = null
 
-    private var detector = SnatchDetector()
+    private val detector = SnatchDetector()
     private var listening = false
 
     // The gyroscope arrives on its own schedule, so the latest reading is held and
@@ -60,11 +60,11 @@ class WatchService : Service(), SensorEventListener {
         accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscope = sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
 
-        // A device with no gyroscope still runs, on jerk alone. Worse, and the setting
-        // says so rather than the app quietly pretending nothing changed.
-        if (gyroscope == null) {
-            detector = SnatchDetector(SnatchDetector.Tuning(requireRotation = false))
-        }
+        // A device with no gyroscope needs no special tuning. Rotation only ever lowers
+        // the bar, so a device that reports none simply holds every grab to the higher
+        // axial threshold — which is the correct behaviour and falls out on its own.
+        // Detecting the absence and passing a different Tuning was left over from the
+        // version where rotation was a hard requirement, and did not survive it.
 
         // RECEIVER_NOT_EXPORTED is not optional. An app targeting 34 or above that
         // registers a receiver without a flag throws SecurityException at registration,
