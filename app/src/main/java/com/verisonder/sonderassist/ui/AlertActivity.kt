@@ -149,6 +149,9 @@ class AlertActivity : ComponentActivity() {
 
         val uri = Settings.alarmUri(this)
             ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        val repeats = Settings.alarmRepeats(this)
+        var played = 0
+
         player = runCatching {
             MediaPlayer().apply {
                 setAudioAttributes(
@@ -158,11 +161,41 @@ class AlertActivity : ComponentActivity() {
                         .build()
                 )
                 setDataSource(this@AlertActivity, uri)
-                isLooping = true
+                // Counted rather than looped. isLooping runs until something stops it,
+                // and the only thing that stopped it was unlocking the phone — so a
+                // false alarm nobody was near went on until the battery or the neighbours
+                // gave out. A count ends on its own; the message stays on screen either
+                // way, which is the part that has to persist.
+                isLooping = false
+                setOnCompletionListener {
+                    played++
+                    if (played < repeats && !isFinishing) {
+                        runCatching { seekTo(0); start() }
+                    } else {
+                        restoreVolume()
+                    }
+                }
                 prepare()
                 start()
             }
         }.getOrNull()
+    }
+
+    /**
+     * Put the alarm volume back where it was.
+     *
+     * Called when the sound finishes on its own as well as on the way out, because the
+     * screen can sit there long after the noise has stopped and leaving the phone's alarm
+     * volume pinned at maximum is not this app's business.
+     */
+    private fun restoreVolume() {
+        previousAlarmVolume?.let { volume ->
+            runCatching {
+                getSystemService(AudioManager::class.java)
+                    .setStreamVolume(AudioManager.STREAM_ALARM, volume, 0)
+            }
+        }
+        previousAlarmVolume = null
     }
 
     /** Back does not dismiss this. Only unlocking does. */
@@ -173,12 +206,7 @@ class AlertActivity : ComponentActivity() {
         runCatching { unregisterReceiver(unlocked) }
         player?.runCatching { stop(); release() }
         player = null
-        previousAlarmVolume?.let { volume ->
-            runCatching {
-                getSystemService(AudioManager::class.java)
-                    .setStreamVolume(AudioManager.STREAM_ALARM, volume, 0)
-            }
-        }
+        restoreVolume()
         super.onDestroy()
     }
 }

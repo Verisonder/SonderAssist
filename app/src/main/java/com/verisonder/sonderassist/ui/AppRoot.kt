@@ -62,6 +62,7 @@ fun AppRoot(activity: ComponentActivity) {
     var sensitivity by remember { mutableFloatStateOf(Settings.sensitivity(activity)) }
     var alarmOn by remember { mutableStateOf(Settings.alarmEnabled(activity)) }
     var grace by remember { mutableIntStateOf(Settings.graceSeconds(activity)) }
+    var repeats by remember { mutableIntStateOf(Settings.alarmRepeats(activity)) }
     var message by remember { mutableStateOf(Settings.message(activity)) }
     var alarmName by remember { mutableStateOf(Settings.alarmUri(activity)?.lastPathSegment) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -287,6 +288,24 @@ fun AppRoot(activity: ComponentActivity) {
                                 }) { Text("Use default") }
                             }
                         }
+
+                        Spacer(Modifier.height(20.dp))
+                        Text(
+                            if (repeats == 1) "Plays once" else "Plays $repeats times",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            "Then it stops on its own. The message stays on screen.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Slider(
+                            value = repeats.toFloat(),
+                            onValueChange = { repeats = it.toInt().coerceAtLeast(1) },
+                            onValueChangeFinished = { Settings.setAlarmRepeats(activity, repeats) },
+                            valueRange = 1f..Settings.MAX_ALARM_REPEATS.toFloat(),
+                            modifier = Modifier.fillMaxWidth(),
+                        )
 
                         Spacer(Modifier.height(20.dp))
                         Text("Wait $grace seconds before the sound", style = MaterialTheme.typography.bodyLarge)

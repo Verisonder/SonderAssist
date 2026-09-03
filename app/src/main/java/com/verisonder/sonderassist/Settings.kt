@@ -19,6 +19,7 @@ object Settings {
     private const val ALARM_ENABLED = "alarm_enabled"
     private const val ALARM_URI = "alarm_uri"
     private const val GRACE_SECONDS = "grace_seconds"
+    private const val ALARM_REPEATS = "alarm_repeats"
     private const val MESSAGE = "message"
     private const val BACKGROUND_URI = "background_uri"
 
@@ -37,6 +38,10 @@ object Settings {
     const val DEFAULT_GRACE_SECONDS = 5
 
     const val DEFAULT_MESSAGE = "This phone is not yours."
+
+    /** How many times the sound plays through before it stops on its own. */
+    const val DEFAULT_ALARM_REPEATS = 3
+    const val MAX_ALARM_REPEATS = 15
 
     private fun of(context: Context) = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
@@ -74,6 +79,13 @@ object Settings {
         of(context).edit().apply {
             if (uri == null) remove(ALARM_URI) else putString(ALARM_URI, uri.toString())
         }.apply()
+    }
+
+    fun alarmRepeats(context: Context): Int =
+        of(context).getInt(ALARM_REPEATS, DEFAULT_ALARM_REPEATS).coerceIn(1, MAX_ALARM_REPEATS)
+
+    fun setAlarmRepeats(context: Context, value: Int) {
+        of(context).edit().putInt(ALARM_REPEATS, value.coerceIn(1, MAX_ALARM_REPEATS)).apply()
     }
 
     fun graceSeconds(context: Context): Int =
