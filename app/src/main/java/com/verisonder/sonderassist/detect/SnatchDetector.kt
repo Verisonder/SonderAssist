@@ -305,21 +305,27 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
      */
     private fun isHeld(now: Long): Boolean {
         val cutoff = now - tuning.heldLagMs * 1_000_000
-        val settled = window.filter { it.timestampNs <= cutoff }
-        if (settled.size < MIN_WINDOW_SAMPLES) return false
-        return magnitudeDeviation(settled) in tuning.heldTremorMin..tuning.heldTremorMax
-    }
-
-    private fun magnitudeDeviation(samples: List<Sample>): Float {
+        // Accumulated in two passes over the deque rather than by building a filtered
+        // list. This runs on every sample — fifty times a second — and the list version
+        // allocated a fresh one each time purely to throw it away.
+        var count = 0
         var sum = 0.0
-        for (s in samples) sum += s.accelMagnitude
-        val mean = sum / samples.size
+        for (s in window) {
+            if (s.timestampNs > cutoff) continue
+            sum += s.accelMagnitude
+            count++
+        }
+        if (count < MIN_WINDOW_SAMPLES) return false
+
+        val mean = sum / count
         var variance = 0.0
-        for (s in samples) {
+        for (s in window) {
+            if (s.timestampNs > cutoff) continue
             val d = s.accelMagnitude - mean
             variance += d * d
         }
-        return sqrt(variance / samples.size).toFloat()
+        val deviation = sqrt(variance / count).toFloat()
+        return deviation in tuning.heldTremorMin..tuning.heldTremorMax
     }
 
     private companion object {
