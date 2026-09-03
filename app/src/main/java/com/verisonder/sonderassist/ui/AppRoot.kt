@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -65,6 +66,7 @@ fun AppRoot(activity: ComponentActivity) {
     var grace by remember { mutableIntStateOf(Settings.graceSeconds(activity)) }
     var message by remember { mutableStateOf(Settings.message(activity)) }
     var alarmName by remember { mutableStateOf(Settings.alarmUri(activity)?.lastPathSegment) }
+    var confirmRemove by remember { mutableStateOf(false) }
 
     val pickAudio = rememberLauncherForActivityResult(
         ActivityResultContracts.OpenDocument()
@@ -255,29 +257,64 @@ fun AppRoot(activity: ComponentActivity) {
                     }
                 }
 
-                Spacer(Modifier.height(28.dp))
+                Spacer(Modifier.height(40.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(20.dp))
 
-                TextButton(
-                    onClick = {
-                        WatchService.stop(activity)
-                        watching = false
-                        Settings.setArmed(activity, false)
-                        DeviceAdminLocker.deactivate(activity)
-                        granted = false
-                    },
-                ) { Text("Turn off protection") }
+                // Deliberately the last thing on the screen, worded for what it is for
+                // rather than what it does internally, and behind a confirmation.
+                //
+                // It used to sit directly under Start watching, styled like a second
+                // power switch and labelled "Turn off protection". Two controls that both
+                // read as off switches, one of them quietly stripping a permission that
+                // can only be granted back through a system dialog. Stopping the watch is
+                // an everyday action; giving up the permission is a once-ever one, and
+                // they should not look alike or live next to each other.
                 Text(
-                    // An active device admin blocks uninstall, so this has to be findable
-                    // rather than buried in system settings.
-                    "Hands the permission back, so SonderAssist can be uninstalled.",
+                    "Uninstalling",
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Android will not let you uninstall SonderAssist while it can lock " +
+                        "the screen. Remove that permission first, then uninstall normally.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { confirmRemove = true }) {
+                    Text("Remove permission")
+                }
                 Spacer(Modifier.height(32.dp))
             }
         }
+    }
+
+    if (confirmRemove) {
+        AlertDialog(
+            onDismissRequest = { confirmRemove = false },
+            title = { Text("Remove permission?") },
+            text = {
+                Text(
+                    "SonderAssist will stop watching and will not be able to lock the " +
+                        "screen. You can give the permission back at any time."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmRemove = false
+                    WatchService.stop(activity)
+                    watching = false
+                    Settings.setArmed(activity, false)
+                    DeviceAdminLocker.deactivate(activity)
+                    granted = false
+                }) { Text("Remove") }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmRemove = false }) { Text("Keep it") }
+            },
+        )
     }
 }
 
