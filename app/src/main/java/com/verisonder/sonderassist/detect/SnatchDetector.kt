@@ -91,7 +91,31 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val freeFallMs: Long = 120,
         val windowMs: Long = 900,
         val gravityAlpha: Float = 0.98f,
-    )
+    ) {
+        companion object {
+            /**
+             * Turn one slider into a set of thresholds.
+             *
+             * The three numbers that decide whether a grab fires move together, because
+             * they describe one physical event from three angles and moving one alone
+             * just makes the detector incoherent. The endpoints are deliberately wide:
+             * at 0 it should take a genuine yank, at 1 it should be twitchy enough to be
+             * annoying. Nobody can tell what the middle should be without traces, which
+             * is what the slider is for in the meantime.
+             *
+             * @param sensitivity 0 is the most cautious, 1 the most eager.
+             */
+            fun forSensitivity(sensitivity: Float): Tuning {
+                val s = sensitivity.coerceIn(0f, 1f)
+                fun between(cautious: Float, eager: Float) = cautious + (eager - cautious) * s
+                return Tuning(
+                    axialJerk = between(900f, 300f),
+                    axialJerkWithRotation = between(550f, 180f),
+                    minAxialAccel = between(9f, 3.5f),
+                )
+            }
+        }
+    }
 
     sealed interface Verdict {
         /** Nothing of interest, including the phone not being in a hand. */

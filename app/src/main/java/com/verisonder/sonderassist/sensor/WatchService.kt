@@ -14,6 +14,7 @@ import android.hardware.SensorManager
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.R
+import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.detect.Sample
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
@@ -33,7 +34,10 @@ class WatchService : Service(), SensorEventListener {
     private var accelerometer: Sensor? = null
     private var gyroscope: Sensor? = null
 
-    private val detector = SnatchDetector()
+    // Rebuilt from the sensitivity setting each time the watch starts, so a change on
+    // the slider takes effect the next time the phone is unlocked rather than needing
+    // the service restarted.
+    private var detector = SnatchDetector()
     private var listening = false
 
     // The gyroscope arrives on its own schedule, so the latest reading is held and
@@ -84,9 +88,11 @@ class WatchService : Service(), SensorEventListener {
             android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
         )
         startListening()
+        isRunning = true
     }
 
     override fun onDestroy() {
+        isRunning = false
         stopListening()
         runCatching { unregisterReceiver(screenEvents) }
         super.onDestroy()
@@ -99,7 +105,9 @@ class WatchService : Service(), SensorEventListener {
     private fun startListening() {
         if (listening) return
         val accel = accelerometer ?: return
-        detector.reset()
+        detector = SnatchDetector(
+            SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this))
+        )
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
         // rate buys nothing at this scale and costs battery for the whole session.
@@ -145,6 +153,12 @@ class WatchService : Service(), SensorEventListener {
         // into the next session and could fire again the moment the phone is unlocked.
         stopListening()
         DeviceAdminLocker.lockNow(this)
+        // Started after the lock, not before: the alert draws over the keyguard, and
+        // showing it first would put it in front of an unlocked phone.
+        startActivity(
+            Intent(this, com.verisonder.sonderassist.ui.AlertActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+        )
     }
 
     // ---------------------------------------------------------------- notification
@@ -170,6 +184,17 @@ class WatchService : Service(), SensorEventListener {
     companion object {
         private const val CHANNEL_ID = "watch"
         private const val NOTIFICATION_ID = 1
+
+        /**
+         * Whether the service is actually alive, as opposed to whether the person asked
+         * for it. The screen used to keep a local flag that reset on every recomposition,
+         * so the button could say "Start watching" while it was running and the reverse
+         * after the system killed it — which is indistinguishable from the feature
+         * failing at random.
+         */
+        @Volatile
+        var isRunning: Boolean = false
+            private set
 
         fun start(context: Context) {
             context.startForegroundService(Intent(context, WatchService::class.java))

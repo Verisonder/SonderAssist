@@ -77,6 +77,34 @@
             </intent-filter>
         </receiver>
 
+        <!--
+            The screen shown over the keyguard after a lock. excludeFromRecents and
+            noHistory so it cannot be found again by someone paging through recents, and
+            singleTask so a second detection reuses the one already showing.
+        -->
+        <activity
+            android:name=".ui.AlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:launchMode="singleTask"
+            android:showOnLockScreen="true"
+            android:theme="@style/Theme.SonderAssist" />
+
+        <!--
+            RECEIVE_BOOT_COMPLETED was declared from the first commit with nothing behind
+            it, so the app was dead after every reboot until someone opened it.
+        -->
+        <receiver
+            android:name=".sensor.BootReceiver"
+            android:exported="true"
+            android:directBootAware="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
     </application>
 
 </manifest>
