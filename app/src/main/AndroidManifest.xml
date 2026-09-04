@@ -54,7 +54,33 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--
+                What a long press on the quick settings tile opens. Declaring it is the
+                whole implementation; Android does the routing.
+            -->
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE_PREFERENCES" />
+            </intent-filter>
         </activity>
+
+        <!--
+            The quick settings tile. Arming and disarming is the thing done often, and it
+            is done in the moments where opening an app is inconvenient — getting on a
+            train, handing the phone to someone.
+        -->
+        <service
+            android:name=".sensor.WatchTileService"
+            android:exported="true"
+            android:icon="@drawable/ic_tile"
+            android:label="@string/tile_label"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.service.quicksettings.TOGGLEABLE_TILE"
+                android:value="true" />
+        </service>
 
         <!--
             specialUse rather than a stock type: none of the defined foreground service

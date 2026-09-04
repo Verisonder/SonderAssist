@@ -1,0 +1,19 @@
+<!--
+    A phone leaving a hand: the one idea the app has, at 24dp.
+
+    No android:tint here. A theme attribute in a drawable fails resource linking against
+    any theme that does not carry it — and it fails in one build variant while the other
+    stays green. The quick settings panel tints tile icons itself.
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M9,2h6a1,1 0,0 1,1 1v10a1,1 0,0 1,-1 1H9a1,1 0,0 1,-1 -1V3a1,1 0,0 1,1 -1zM10,4v8h4V4z" />
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M4,16h2v3h12v-3h2v4a1,1 0,0 1,-1 1H5a1,1 0,0 1,-1 -1z" />
+</vector>

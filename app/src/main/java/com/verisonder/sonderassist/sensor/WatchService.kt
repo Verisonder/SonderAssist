@@ -99,10 +99,12 @@ class WatchService : Service(), SensorEventListener {
         )
         startListening()
         isRunning = true
+        WatchTileService.refreshFrom(this)
     }
 
     override fun onDestroy() {
         isRunning = false
+        WatchTileService.refreshFrom(this)
         Alarm.stop()
         stopListening()
         runCatching { unregisterReceiver(screenEvents) }
