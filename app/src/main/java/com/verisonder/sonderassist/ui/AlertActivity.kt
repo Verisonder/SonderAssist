@@ -25,7 +25,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import android.widget.FrameLayout
 import com.verisonder.sonderassist.Settings
+import com.verisonder.sonderassist.sensor.WatchService
 import com.verisonder.sonderassist.ui.theme.SonderAssistTheme
 
 /**
@@ -41,11 +43,20 @@ import com.verisonder.sonderassist.ui.theme.SonderAssistTheme
  */
 class AlertActivity : ComponentActivity() {
 
+    private val MATCH get() = FrameLayout.LayoutParams(
+        FrameLayout.LayoutParams.MATCH_PARENT,
+        FrameLayout.LayoutParams.MATCH_PARENT,
+    )
+
     /**
      * Unlocking is the only way out of this screen.
      *
      * Not a button, because a button is one a thief can press too. Only someone who knows
      * the PIN can dismiss it, which is the same test the alarm uses to fall silent.
+     *
+     * J.A.R.V.I.S mode adds a second way out, and it is a different kind of secret: the
+     * gesture is not knowledge the phone can check, only something a stranger is unlikely
+     * to guess. Unlocking still works, and still works faster.
      */
     private val unlocked = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -70,6 +81,11 @@ class AlertActivity : ComponentActivity() {
             IntentFilter(Intent.ACTION_USER_PRESENT),
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
+
+        if (Settings.jarvis(this)) {
+            showJarvis(savedInstanceState == null)
+            return
+        }
 
         val message = Settings.message(this)
         // Decoded once, here, rather than in composition: this screen appears at the
@@ -123,6 +139,44 @@ class AlertActivity : ComponentActivity() {
             }
         }
 
+    }
+
+    /**
+     * J.A.R.V.I.S mode: the screen from BlackFriday, carried over whole.
+     *
+     * Nothing on it and nothing to read. A touch brings the rings, two fingers tapped
+     * once arm it, two fingers up 150dp end it. Plain views rather than Compose because
+     * these two are the originals, and a rewrite would have had to rediscover the
+     * gesture rules that were found on a real phone.
+     *
+     * Unlocking still dismisses it. The gesture is an addition, not a replacement, so
+     * knowing the PIN is never the slower way out.
+     */
+    private fun showJarvis(coldStart: Boolean) {
+        val field = DotFieldView(this).apply {
+            // The wide flat field: here the dots are the only thing on screen, which is
+            // exactly the case this mode was written for.
+            quiet = true
+            if (coldStart) open()
+        }
+
+        val hud = HudView(this).apply {
+            onFingers = { points, count -> field.lightUnder(points, count) }
+            onLoad = {
+                // Asked of the service, which owns the sound. Stopping it from here
+                // would put the alarm back inside the window it was taken out of.
+                WatchService.silence(this@AlertActivity)
+                finish()
+            }
+        }
+
+        setContentView(
+            FrameLayout(this).apply {
+                setBackgroundColor(android.graphics.Color.BLACK)
+                addView(field, MATCH, MATCH)
+                addView(hud, MATCH, MATCH)
+            }
+        )
     }
 
     /** Back does not dismiss this. Only unlocking does. */

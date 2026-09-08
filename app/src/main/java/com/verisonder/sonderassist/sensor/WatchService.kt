@@ -62,6 +62,11 @@ class WatchService : Service(), SensorEventListener {
                 }
 
                 Intent.ACTION_SCREEN_OFF -> stopListening()
+
+                // The alert screen asks; the service acts. Structural rule: the sound
+                // belongs to the service, so a screen that Android refuses to open
+                // cannot take the alarm down with it.
+                ACTION_SILENCE -> Alarm.stop()
             }
         }
     }
@@ -89,6 +94,7 @@ class WatchService : Service(), SensorEventListener {
             IntentFilter().apply {
                 addAction(Intent.ACTION_USER_PRESENT)
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(ACTION_SILENCE)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -291,6 +297,20 @@ class WatchService : Service(), SensorEventListener {
 
         fun stop(context: Context) {
             context.stopService(Intent(context, WatchService::class.java))
+        }
+
+        /** Private to this app: the receiver is registered RECEIVER_NOT_EXPORTED. */
+        private const val ACTION_SILENCE = "com.verisonder.sonderassist.SILENCE"
+
+        /**
+         * Stop the sound without stopping the watch.
+         *
+         * A broadcast rather than a service start: the alert screen is an activity and
+         * starting a service from one is subject to rules that change by version, while
+         * a broadcast to an already-running receiver is not.
+         */
+        fun silence(context: Context) {
+            context.sendBroadcast(Intent(ACTION_SILENCE).setPackage(context.packageName))
         }
     }
 }
