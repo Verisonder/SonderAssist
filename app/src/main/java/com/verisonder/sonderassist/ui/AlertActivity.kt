@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.PowerManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -237,6 +238,8 @@ class AlertActivity : ComponentActivity() {
      * closes:
      *  - `seen` means this screen was actually in front, so the launch itself is not it
      *  - `isFinishing` means it is closing on purpose, including on unlock
+     *  - the display must still be on, or this is the screen going off rather than
+     *    something covering it
      *  - locking is skipped if Device Admin is not active, where it would fail anyway
      */
     override fun onPause() {
@@ -246,6 +249,18 @@ class AlertActivity : ComponentActivity() {
         // Never in front, so nothing covered it. This is the launch itself.
         if (!seen) return
         if (isFinishing) return
+
+        // The one that matters. onPause does not mean "something covered me" - it also
+        // fires when the display goes off, which happens moments after this screen
+        // appears. Treating that as a cover locked and finished the alert immediately,
+        // so turning the screen back on showed nothing and only the alarm was left.
+        //
+        // Being covered by another window leaves the display on. That is the difference,
+        // and it is the only signal available without a permission that watches every app
+        // the phone runs.
+        val display = getSystemService(PowerManager::class.java)
+        if (display?.isInteractive != true) return
+
         if (!DeviceAdminLocker.isReady(this)) return
 
         Settings.noteAlert(this, "something covered the screen, going dark")
