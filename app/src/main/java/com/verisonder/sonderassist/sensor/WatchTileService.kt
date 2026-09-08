@@ -117,9 +117,17 @@ class WatchTileService : TileService() {
         handler.postDelayed(verify, VERIFY_DELAY_MS)
     }
 
+    /**
+     * Appended, not replaced.
+     *
+     * refresh() writes a note of its own and onClick calls refresh() last, so a single
+     * slot always ended up reading "painted" and the tap that caused it was gone - which
+     * is the one thing worth knowing. It read as a tile that had done nothing.
+     */
     private fun note(what: String) {
         val at = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
-        Settings.setTileNote(this, "$at - $what")
+        val kept = Settings.tileNote(this).orEmpty().lines().filter { it.isNotBlank() }
+        Settings.setTileNote(this, (kept + "$at $what").takeLast(4).joinToString("\n"))
     }
 
     /**

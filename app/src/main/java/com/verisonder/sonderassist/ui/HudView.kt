@@ -19,8 +19,10 @@ import kotlin.math.sin
  *
  * The screen has nothing on it - no name, no button, nothing to read. What it
  * has instead is an answer for a touch: a set of turning rings that arrive where
- * the finger is and leave when it does. Two fingers tapped once arm it, and two
- * fingers swiping up finish it.
+ * the finger is and leave when it does. Two fingers tapped once arm it, two
+ * fingers up carry it to the second stage, and one finger left to right finishes
+ * it. Each leg has its own origin, taken where the fingers are when that leg
+ * begins.
  *
  * Drawn rather than drawn from a file. A picture could not be tinted, could not
  * turn without softening at the edges, and could not brighten to say it had
@@ -68,8 +70,8 @@ class HudView @JvmOverloads constructor(
     ) {
         /** Where this finger landed. Movement is measured from here, not from
          *  the middle of however many fingers happen to be down. */
-        val startX = x
-        val startY = y
+        var startX = x
+        var startY = y
     }
 
     private val touches = mutableListOf<Touch>()
@@ -108,9 +110,13 @@ class HudView @JvmOverloads constructor(
     private var drift = 0f
     private var sawTwo = false
     private var armedAt = 0L
+
+    /** When the swipe up landed. The gesture is three parts now, not two. */
+    private var stagedAt = 0L
     private var fired = false
 
     private val armed get() = armedAt != 0L
+    private val staged get() = stagedAt != 0L
 
     private fun dp(value: Float) = value * resources.displayMetrics.density
     private val slop by lazy { ViewConfiguration.get(context).scaledTouchSlop.toFloat() }
@@ -165,7 +171,13 @@ class HudView @JvmOverloads constructor(
                 // of the fingers still down. That midpoint jumps half the gap
                 // between two fingers the moment one of them lifts, which read
                 // as a drag every time and threw the tap away.
+                // Read before anything can change it. The sideways leg must not be
+                // satisfied by the same event that finished the upward one, or a single
+                // diagonal drag completes both and the gesture is one swipe, not three.
+                val wasStaged = staged
+
                 var swiping = 0
+                var crossing = 0
                 for (index in touches.indices) {
                     val touch = touches[index]
                     if (touch.lifted != 0L) continue
@@ -176,15 +188,43 @@ class HudView @JvmOverloads constructor(
                     // not the same gesture and should not be taken for one
                     val up = touch.startY - touch.y
                     if (up > dp(SWIPE_DP) && abs(touch.x - touch.startX) < up) swiping++
+
+                    // The same test turned on its side, and left to right
+                    // only: a swipe that goes either way is half a gesture, and
+                    // the one that matters here has a direction.
+                    val across = touch.x - touch.startX
+                    if (across > dp(SWIPE_DP) && abs(touch.y - touch.startY) < across) crossing++
                 }
 
-                // Two fingers arm it and two fingers finish it. Counting one
-                // was enough before, which meant the swipe could be done with a
-                // thumb after the tap - easy to do by accident, and not the
-                // gesture that was asked for.
-                if (armed && !fired && swiping >= 2) {
-                    fired = true
+                // Two fingers arm it and two fingers carry it through each
+                // stage. Counting one was enough before, which meant the swipe
+                // could be done with a thumb after the tap - easy to do by
+                // accident, and not the gesture that was asked for.
+                if (armed && !staged && swiping >= 2) {
+                    // Not the end any more, only the middle. Each finger is
+                    // measured from where it landed, so the sideways swipe that
+                    // follows needs its own origin - otherwise the distance it
+                    // had already travelled upward would count against it, and
+                    // fingers that never lift could never satisfy the second
+                    // leg at all.
+                    stagedAt = now
                     armedAt = 0L
+                    for (index in touches.indices) {
+                        val touch = touches[index]
+                        if (touch.lifted != 0L) continue
+                        touch.startX = touch.x
+                        touch.startY = touch.y
+                    }
+                    drift = 0f
+                }
+
+                // One finger, not two. The count is a guard against a gesture
+                // being made by accident, and by this point two deliberate legs
+                // have already been made - the third is not what an accident
+                // reaches on its own.
+                if (wasStaged && !fired && crossing >= 1) {
+                    fired = true
+                    stagedAt = 0L
                     launch = true
                 }
             }
@@ -257,6 +297,11 @@ class HudView @JvmOverloads constructor(
         val armedNow = armed && (now - armedAt) < ARM_MS * 1_000_000L
         if (armed && !armedNow) armedAt = 0L
 
+        // The second stage forgets on the same timer. A gesture left half done
+        // should not sit waiting to be finished by an accident minutes later.
+        val stagedNow = staged && (now - stagedAt) < ARM_MS * 1_000_000L
+        if (staged && !stagedNow) stagedAt = 0L
+
         val iterator = touches.iterator()
         var moving = false
         while (iterator.hasNext()) {
@@ -267,7 +312,10 @@ class HudView @JvmOverloads constructor(
                 continue
             }
             if (touch.lifted == 0L || fade < 1f) moving = true
-            draw(canvas, touch.x, touch.y, fade * if (armedNow) 1f else 0.75f)
+            // Brighter again at the second stage, so the rings say which leg of
+            // the gesture the screen thinks it is on rather than leaving it to
+            // be guessed at.
+            draw(canvas, touch.x, touch.y, fade * if (stagedNow) 1f else if (armedNow) 0.9f else 0.75f)
         }
 
         if (moving || touches.isNotEmpty()) postInvalidateOnAnimation()
@@ -388,6 +436,7 @@ class HudView @JvmOverloads constructor(
         touches.clear()
         lastFrame = 0L
         armedAt = 0L
+        stagedAt = 0L
         onFingers?.invoke(fingerBuffer, 0)
         super.onDetachedFromWindow()
     }
@@ -399,6 +448,7 @@ class HudView @JvmOverloads constructor(
         if (visibility != VISIBLE) {
             touches.clear()
             armedAt = 0L
+            stagedAt = 0L
             onFingers?.invoke(fingerBuffer, 0)
         }
     }

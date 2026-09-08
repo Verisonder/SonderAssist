@@ -25,7 +25,9 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import android.view.Gravity
 import android.widget.FrameLayout
+import android.widget.TextView
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.sensor.WatchService
 import com.verisonder.sonderassist.ui.theme.SonderAssistTheme
@@ -144,10 +146,14 @@ class AlertActivity : ComponentActivity() {
     /**
      * J.A.R.V.I.S mode: the screen from BlackFriday, carried over whole.
      *
-     * Nothing on it and nothing to read. A touch brings the rings, two fingers tapped
-     * once arm it, two fingers up 150dp end it. Plain views rather than Compose because
-     * these two are the originals, and a rewrite would have had to rediscover the
-     * gesture rules that were found on a real phone.
+     * The message and nothing else. A touch brings the rings: two fingers tapped once
+     * arm it, two fingers up carry it on, one finger left to right ends it. Plain views
+     * rather than Compose because HudView and DotFieldView are the originals, and a
+     * rewrite would have had to rediscover the gesture rules that were found on a real
+     * phone.
+     *
+     * The rings sit above the words so a finger's instrument is never drawn behind
+     * them, and HudView takes every touch, so the text can never swallow one.
      *
      * Unlocking still dismisses it. The gesture is an addition, not a replacement, so
      * knowing the PIN is never the slower way out.
@@ -170,10 +176,23 @@ class AlertActivity : ComponentActivity() {
             }
         }
 
+        // Between the field and the rings. Under the rings so a finger's instrument is
+        // never drawn behind the words, and above the field so the words are readable
+        // over it. No typeface is set: the phone's own is the one to use.
+        val words = TextView(this).apply {
+            text = Settings.message(this@AlertActivity)
+            setTextColor(android.graphics.Color.WHITE)
+            textSize = 24f
+            gravity = Gravity.CENTER
+            val pad = (32 * resources.displayMetrics.density).toInt()
+            setPadding(pad, pad, pad, pad)
+        }
+
         setContentView(
             FrameLayout(this).apply {
                 setBackgroundColor(android.graphics.Color.BLACK)
                 addView(field, MATCH)
+                addView(words, MATCH)
                 addView(hud, MATCH)
             }
         )
