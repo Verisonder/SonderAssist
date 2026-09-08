@@ -7,19 +7,34 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowLeft
+import androidx.compose.material.icons.filled.KeyboardArrowRight
+// Aliased: the app has its own Settings, and two imports of one name do not compile.
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Settings as SettingsIcon
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
@@ -59,6 +74,14 @@ import com.verisonder.sonderassist.sensor.WatchService
  */
 @Composable
 fun AppRoot(activity: ComponentActivity) {
+    /**
+     * Which of the two screens is showing.
+     *
+     * One screen carried everything: the switch that is looked at daily and a dozen
+     * settings that are touched once. The daily thing was at the top of a long scroll and
+     * everything else was in the way of it.
+     */
+    var onSettings by remember { mutableStateOf(false) }
     var granted by remember { mutableStateOf(DeviceAdminLocker.isReady(activity)) }
     // Refreshed on resume, so returning from a failed tile tap shows the reason.
     var crash by remember { mutableStateOf(CrashLog.read(activity)) }
@@ -172,19 +195,29 @@ fun AppRoot(activity: ComponentActivity) {
     // Compose's default of black, which on a dark background reads as washed out and
     // half-legible. Dropping it during a rewrite is what made the screen look grey.
     Surface(modifier = Modifier.fillMaxSize()) {
+    Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 20.dp, vertical = 28.dp),
     ) {
-        Text("SonderAssist", style = MaterialTheme.typography.headlineMedium)
-        Spacer(Modifier.height(4.dp))
-        Text(
-            "Locks the screen when the phone is taken from your hand.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (onSettings) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(onClick = { onSettings = false }) {
+                    Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
+                }
+                Text("Settings", style = MaterialTheme.typography.headlineMedium)
+            }
+        } else {
+            Text("SonderAssist", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "Locks the screen when the phone is taken from your hand.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
 
         Spacer(Modifier.height(28.dp))
 
@@ -226,6 +259,9 @@ fun AppRoot(activity: ComponentActivity) {
             ) { activity.startActivity(DeviceAdminLocker.activationIntent(activity)) }
 
             else -> {
+                // The two screens. Everything that is looked at is on the first;
+                // everything that is set once is behind the button in the corner.
+                if (!onSettings) {
                 StatusCard(
                     watching = watching,
                     onToggle = {
@@ -302,10 +338,9 @@ fun AppRoot(activity: ComponentActivity) {
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
 
-                Spacer(Modifier.height(28.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(28.dp))
+                }
 
+                if (onSettings) {
                 SectionLabel("Message on the lock screen")
                 OutlinedTextField(
                     value = message,
@@ -972,8 +1007,26 @@ fun AppRoot(activity: ComponentActivity) {
                     Text("Remove permission")
                 }
                 Spacer(Modifier.height(32.dp))
+                }
             }
         }
+    }
+
+    // Only once there is something to configure. Before the permission is granted the
+    // screen has one job, which is asking for it.
+    if (granted && hasLock) {
+        FloatingActionButton(
+            onClick = { onSettings = !onSettings },
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(20.dp),
+        ) {
+            Icon(
+                if (onSettings) Icons.Filled.Close else SettingsIcon,
+                contentDescription = if (onSettings) "Close settings" else "Settings",
+            )
+        }
+    }
     }
     }
 
@@ -1013,23 +1066,72 @@ fun AppRoot(activity: ComponentActivity) {
  */
 @Composable
 private fun StatusCard(watching: Boolean, onToggle: () -> Unit) {
-    Column(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            if (watching) "Watching" else "Not watching",
-            style = MaterialTheme.typography.titleMedium,
-        )
-        Spacer(Modifier.height(4.dp))
-        Text(
-            if (watching) {
-                "The screen locks if the phone is pulled out of your hand."
-            } else {
-                "Nothing is being watched for."
-            },
-            style = MaterialTheme.typography.bodyMedium,
-        )
-        Spacer(Modifier.height(16.dp))
-        Button(onClick = onToggle, modifier = Modifier.fillMaxWidth()) {
-            Text(if (watching) "Stop watching" else "Start watching")
+    // One tile, tappable anywhere, carrying the state and the way to change it. The whole
+    // thing is the control: an eye that is open or shut, the word for what it is doing,
+    // and a coloured edge that says which way pressing it goes.
+    Surface(
+        onClick = onToggle,
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.height(120.dp),
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 16.dp),
+            ) {
+                Icon(
+                    // Only the core icon set is in this build; the extended one is
+                    // megabytes of glyphs for the sake of a padlock.
+                    if (watching) Icons.Filled.Lock else Icons.Filled.Clear,
+                    contentDescription = null,
+                    modifier = Modifier.height(40.dp),
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    if (watching) "watching" else "not watching",
+                    style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            // The edge. Green while it is on, and the arrow points the way a press goes -
+            // forward into watching, back out of it.
+            Surface(
+                color = if (watching) {
+                    MaterialTheme.colorScheme.primary
+                } else {
+                    MaterialTheme.colorScheme.surface
+                },
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .padding(6.dp),
+                shape = RoundedCornerShape(20.dp),
+            ) {
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.padding(horizontal = 22.dp),
+                ) {
+                    Icon(
+                        if (watching) {
+                            Icons.Filled.KeyboardArrowLeft
+                        } else {
+                            Icons.Filled.KeyboardArrowRight
+                        },
+                        contentDescription = if (watching) "Stop watching" else "Start watching",
+                        tint = if (watching) {
+                            MaterialTheme.colorScheme.onPrimary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                }
+            }
         }
     }
 }
