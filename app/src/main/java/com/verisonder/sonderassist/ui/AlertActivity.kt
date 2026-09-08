@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
 import android.os.PowerManager
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -56,6 +57,9 @@ class AlertActivity : ComponentActivity() {
      * guarded until there is something to guard.
      */
     private var seen = false
+
+    /** When it first came up, so the guard can ignore its own arrival. */
+    private var seenAt = 0L
 
     private val MATCH get() = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
@@ -216,6 +220,7 @@ class AlertActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        if (!seen) seenAt = SystemClock.elapsedRealtime()
         seen = true
     }
 
@@ -237,6 +242,8 @@ class AlertActivity : ComponentActivity() {
      * Then three guards, because going dark when it should not is worse than the hole it
      * closes:
      *  - `seen` means this screen was actually in front, so the launch itself is not it
+     *  - a second must have passed, which is longer than the churn of arriving and much
+     *    shorter than anyone reaching for the phone
      *  - `isFinishing` means it is closing on purpose, including on unlock
      *  - the display must still be on, or this is the screen going off rather than
      *    something covering it
@@ -249,6 +256,12 @@ class AlertActivity : ComponentActivity() {
         // Never in front, so nothing covered it. This is the launch itself.
         if (!seen) return
         if (isFinishing) return
+
+        // Everything that goes wrong here goes wrong in the first moment: the lock, the
+        // keyguard, the display coming on and this window being placed all pause and
+        // resume against each other while the alert is arriving. A second is longer than
+        // any of that and far shorter than picking a phone up and holding a button.
+        if (SystemClock.elapsedRealtime() - seenAt < ARM_DELAY_MS) return
 
         // The one that matters. onPause does not mean "something covered me" - it also
         // fires when the display goes off, which happens moments after this screen
@@ -280,4 +293,8 @@ class AlertActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private companion object {
+        /** How long the alert ignores being paused after it arrives. */
+        const val ARM_DELAY_MS = 1_000L
+    }
 }
