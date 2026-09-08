@@ -309,7 +309,10 @@ fun AppRoot(activity: ComponentActivity) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("J.A.R.V.I.S mode", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Replace the alert screen",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
                         Text(
                             "A blank screen and its own sound, played once. Two fingers " +
                                 "tapped once, then two fingers up, clears the screen and " +
