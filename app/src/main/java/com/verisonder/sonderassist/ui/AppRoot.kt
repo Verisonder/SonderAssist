@@ -65,6 +65,7 @@ fun AppRoot(activity: ComponentActivity) {
     var blockPower by remember { mutableStateOf(Settings.blockPowerMenu(activity)) }
     var alertNote by remember { mutableStateOf(Settings.alertNote(activity)) }
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
+    var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
     var shizuku by remember { mutableStateOf(PowerMenu.available()) }
     var shizukuAsk by remember { mutableStateOf(PowerMenu.needsPermission()) }
     var suppressed by remember { mutableStateOf(Settings.powerMenuSuppressed(activity)) }
@@ -386,6 +387,33 @@ fun AppRoot(activity: ComponentActivity) {
                             )
                         }
                     }) { Text("Allow full-screen alerts") }
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Lock again if something covers it",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            "The assistant can open over the lock screen on a long press " +
+                                "of the power button, and it covers the alert. This puts " +
+                                "the screen out again and brings the alert back. Up to " +
+                                "five times, then it stops.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = guardAlert,
+                        onCheckedChange = {
+                            guardAlert = it
+                            Settings.setGuardAlert(activity, it)
+                        },
+                    )
                 }
 
                 alertNote?.let { note ->

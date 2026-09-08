@@ -25,6 +25,7 @@ object Settings {
     private const val JARVIS = "jarvis"
     private const val TILE_NOTE = "tile_note"
     private const val ALERT_NOTE = "alert_note"
+    private const val GUARD_ALERT = "guard_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
@@ -164,6 +165,18 @@ object Settings {
         of(context).edit()
             .putString(ALERT_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
             .commit()
+    }
+
+    /**
+     * Whether to lock again when something covers the alert screen.
+     *
+     * Off until asked for. It fights the phone for the front of the display, and that is
+     * not something to start doing on its own.
+     */
+    fun guardAlert(context: Context): Boolean = of(context).getBoolean(GUARD_ALERT, false)
+
+    fun setGuardAlert(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(GUARD_ALERT, value).apply()
     }
 
     fun blockPowerMenu(context: Context): Boolean =

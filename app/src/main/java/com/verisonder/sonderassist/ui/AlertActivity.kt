@@ -218,8 +218,11 @@ class AlertActivity : ComponentActivity() {
      * out and brings this back, which is the same call the detector makes and the closest
      * an app gets to a press of the power button.
      *
-     * Three guards, because a re-lock that runs when it should not is worse than the hole
-     * it closes:
+     * Off by default, and checked first: this fights the phone for the front of the
+     * display, which is not something to start doing unasked.
+     *
+     * Then three guards, because a re-lock that runs when it should not is worse than the
+     * hole it closes:
      *  - `isFinishing` means this screen is closing on purpose, including on unlock
      *  - `RELOCK_LIMIT` stops a fight the app cannot win becoming a flickering phone
      *  - locking is skipped if Device Admin is not active, where it would fail anyway
@@ -227,6 +230,7 @@ class AlertActivity : ComponentActivity() {
     override fun onPause() {
         super.onPause()
 
+        if (!Settings.guardAlert(this)) return
         if (isFinishing) return
         if (relocks >= RELOCK_LIMIT) {
             Settings.noteAlert(this, "covered again, and out of re-locks")
