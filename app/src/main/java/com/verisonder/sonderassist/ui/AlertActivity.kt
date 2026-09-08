@@ -335,6 +335,23 @@ class AlertActivity : ComponentActivity() {
         handler.postDelayed(goDark, GO_DARK_DELAY_MS)
     }
 
+    /**
+     * Navigated away from, rather than covered.
+     *
+     * The home gesture sends this whole task to the background and no app can block it.
+     * Nothing is hidden and the display is still on, so there is nothing to darken for -
+     * the alert just goes back in front.
+     *
+     * Skipped when the guard has deliberately gone dark, where putting it back would
+     * wake the display it just put out, and when this screen is closing on purpose.
+     */
+    override fun onStop() {
+        super.onStop()
+        if (isFinishing || wentDark) return
+        Settings.noteAlert(this, "navigated away from, going back in front")
+        WatchService.reassert(this)
+    }
+
     /** Back does not dismiss this. Only unlocking does. */
     @Deprecated("Back is deliberately inert here")
     override fun onBackPressed() = Unit

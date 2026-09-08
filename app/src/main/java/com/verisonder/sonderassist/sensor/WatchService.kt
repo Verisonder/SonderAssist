@@ -96,6 +96,13 @@ class WatchService : Service(), SensorEventListener {
                 // The Stop action on the reporting notification.
                 ACTION_STOP_REPORT -> Reporter.stop(this@WatchService)
 
+                // The alert screen was navigated away from rather than covered - the
+                // home gesture, which no app can block. Nothing needs to go dark for
+                // that; the screen is still on and the alert simply goes back in front.
+                ACTION_REASSERT -> {
+                    if (Settings.alertLive(this@WatchService)) showAlert()
+                }
+
                 // The gesture cleared the alert deliberately. Unlike the guard, which only
                 // hides it, this one means it should not come back.
                 ACTION_DISMISS -> {
@@ -133,6 +140,7 @@ class WatchService : Service(), SensorEventListener {
                 addAction(ACTION_SILENCE)
                 addAction(ACTION_STOP_REPORT)
                 addAction(ACTION_DISMISS)
+                addAction(ACTION_REASSERT)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -389,6 +397,13 @@ class WatchService : Service(), SensorEventListener {
          */
         fun silence(context: Context) {
             context.sendBroadcast(Intent(ACTION_SILENCE).setPackage(context.packageName))
+        }
+
+        private const val ACTION_REASSERT = "com.verisonder.sonderassist.REASSERT"
+
+        /** Put the alert back in front, without touching the display. */
+        fun reassert(context: Context) {
+            context.sendBroadcast(Intent(ACTION_REASSERT).setPackage(context.packageName))
         }
 
         private const val ACTION_DISMISS = "com.verisonder.sonderassist.DISMISS"
