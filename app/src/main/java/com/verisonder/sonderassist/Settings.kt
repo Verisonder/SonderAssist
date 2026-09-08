@@ -26,6 +26,14 @@ object Settings {
     private const val TILE_NOTE = "tile_note"
     private const val ALERT_NOTE = "alert_note"
     private const val GUARD_ALERT = "guard_alert"
+    private const val REPORT = "report"
+    private const val SMS_NUMBER = "sms_number"
+    private const val TG_TOKEN = "tg_token"
+    private const val TG_CHAT = "tg_chat"
+    private const val REPORT_DELAY = "report_delay"
+    private const val REPORT_INTERVAL = "report_interval"
+    private const val REPORT_COUNT = "report_count"
+    private const val REPORT_NOTE = "report_note"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
@@ -44,6 +52,11 @@ object Settings {
      * knows the PIN can stop it before it makes a sound; someone who does not, cannot.
      */
     const val DEFAULT_GRACE_SECONDS = 5
+
+    /** A minute: long enough to unlock a false alarm, short enough to beat a power-off. */
+    const val DEFAULT_REPORT_DELAY = 60
+    const val DEFAULT_REPORT_INTERVAL = 120
+    const val DEFAULT_REPORT_COUNT = 5
 
     const val DEFAULT_MESSAGE = "This phone is not yours."
 
@@ -177,6 +190,75 @@ object Settings {
 
     fun setGuardAlert(context: Context, value: Boolean) {
         of(context).edit().putBoolean(GUARD_ALERT, value).apply()
+    }
+
+    /** Send the location after a theft. Off until asked for. */
+    fun reportEnabled(context: Context): Boolean = of(context).getBoolean(REPORT, false)
+
+    fun setReportEnabled(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(REPORT, value).apply()
+    }
+
+    fun smsNumber(context: Context): String = of(context).getString(SMS_NUMBER, "").orEmpty()
+
+    fun setSmsNumber(context: Context, value: String) {
+        of(context).edit().putString(SMS_NUMBER, value.trim()).apply()
+    }
+
+    /**
+     * The bot token, kept here and nowhere else.
+     *
+     * The repository is public. A token in a commit is a token that gets scraped, so this is
+     * typed on the phone and never leaves it.
+     */
+    fun telegramToken(context: Context): String = of(context).getString(TG_TOKEN, "").orEmpty()
+
+    fun setTelegramToken(context: Context, value: String) {
+        of(context).edit().putString(TG_TOKEN, value.trim()).apply()
+    }
+
+    fun telegramChat(context: Context): String = of(context).getString(TG_CHAT, "").orEmpty()
+
+    fun setTelegramChat(context: Context, value: String) {
+        of(context).edit().putString(TG_CHAT, value.trim()).apply()
+    }
+
+    /**
+     * How long to wait before the first report.
+     *
+     * Deliberately short. Ten seconds on the power button switches the phone off and nothing
+     * in software can stop that, so a long wait guarantees nothing is ever sent.
+     */
+    fun reportDelaySeconds(context: Context): Int =
+        of(context).getInt(REPORT_DELAY, DEFAULT_REPORT_DELAY).coerceIn(15, 600)
+
+    fun setReportDelaySeconds(context: Context, value: Int) {
+        of(context).edit().putInt(REPORT_DELAY, value.coerceIn(15, 600)).apply()
+    }
+
+    fun reportIntervalSeconds(context: Context): Int =
+        of(context).getInt(REPORT_INTERVAL, DEFAULT_REPORT_INTERVAL).coerceIn(30, 1800)
+
+    fun setReportIntervalSeconds(context: Context, value: Int) {
+        of(context).edit().putInt(REPORT_INTERVAL, value.coerceIn(30, 1800)).apply()
+    }
+
+    fun reportCount(context: Context): Int =
+        of(context).getInt(REPORT_COUNT, DEFAULT_REPORT_COUNT).coerceIn(1, 30)
+
+    fun setReportCount(context: Context, value: Int) {
+        of(context).edit().putInt(REPORT_COUNT, value.coerceIn(1, 30)).apply()
+    }
+
+    fun reportNote(context: Context): String? = of(context).getString(REPORT_NOTE, null)
+
+    fun noteReport(context: Context, what: String) {
+        val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
+        val kept = reportNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        of(context).edit()
+            .putString(REPORT_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
+            .commit()
     }
 
     fun blockPowerMenu(context: Context): Boolean =
