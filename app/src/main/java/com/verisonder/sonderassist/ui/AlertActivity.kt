@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
@@ -63,6 +65,35 @@ class AlertActivity : ComponentActivity() {
 
     /** Whether the guard put the display out and this screen is waiting to come back. */
     private var wentDark = false
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    /**
+     * Going dark, a moment after the cover was noticed.
+     *
+     * Locking the instant the assistant appears races its own launch: the display goes
+     * out and the window coming up turns it straight back on, inside a tenth of a second,
+     * leaving the lock screen with the assistant over it. Letting it settle first means
+     * the lock is the last thing to happen rather than the first.
+     */
+    private val goDark = Runnable {
+        wentDark = true
+        Settings.noteAlert(this, "something covered the screen, going dark")
+
+        // Silent as well as dark. A phone making a noise is not a phone that looks
+        // switched off, and the point of going dark is that it should.
+        WatchService.silence(this)
+
+        // Stop this screen waking the display on its own. It is wanted when the alert
+        // first arrives and is exactly wrong now: it would undo the lock the moment this
+        // window came back. Turning the screen on by hand still brings the alert up,
+        // because showWhenLocked is untouched.
+        runCatching { setTurnScreenOn(false) }
+
+        DeviceAdminLocker.lockNow(this)
+        // Not finished. This screen stays alive behind the dark display so that turning
+        // it back on brings the alert back rather than nothing at all.
+    }
 
     private val MATCH get() = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
@@ -228,6 +259,11 @@ class AlertActivity : ComponentActivity() {
         seenAt = SystemClock.elapsedRealtime()
         seen = true
 
+        // Back in front, so whatever covered it has gone and there is nothing to darken
+        // for. Cancelled rather than left to fire into an alert that is already showing.
+        handler.removeCallbacks(goDark)
+        runCatching { setTurnScreenOn(true) }
+
         if (wentDark && !isFinishing) {
             wentDark = false
             // The screen is back, so the alarm comes back with it. Asked of the service,
@@ -291,15 +327,8 @@ class AlertActivity : ComponentActivity() {
 
         if (!DeviceAdminLocker.isReady(this)) return
 
-        wentDark = true
-        Settings.noteAlert(this, "something covered the screen, going dark")
-
-        // Silent as well as dark. A phone that is making a noise is not a phone that
-        // looks switched off, and the point of going dark is that it should.
-        WatchService.silence(this)
-        DeviceAdminLocker.lockNow(this)
-        // Not finished. This screen stays alive behind the dark display so that turning
-        // it back on brings the alert back rather than nothing at all.
+        handler.removeCallbacks(goDark)
+        handler.postDelayed(goDark, GO_DARK_DELAY_MS)
     }
 
     /** Back does not dismiss this. Only unlocking does. */
@@ -307,6 +336,7 @@ class AlertActivity : ComponentActivity() {
     override fun onBackPressed() = Unit
 
     override fun onDestroy() {
+        handler.removeCallbacks(goDark)
         runCatching { unregisterReceiver(unlocked) }
         super.onDestroy()
     }
@@ -314,5 +344,8 @@ class AlertActivity : ComponentActivity() {
     private companion object {
         /** How long the alert ignores being paused after it arrives. */
         const val ARM_DELAY_MS = 1_000L
+
+        /** How long to let whatever covered the screen settle before locking. */
+        const val GO_DARK_DELAY_MS = 1_000L
     }
 }
