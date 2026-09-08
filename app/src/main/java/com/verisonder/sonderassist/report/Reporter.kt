@@ -45,9 +45,6 @@ import java.util.concurrent.Executors
  */
 object Reporter {
 
-    /** How often a written update goes out alongside the pin. */
-    private const val STATUS_EVERY_MS = 60L * 60L * 1000L
-
     private const val CHANNEL_ID = "report"
 
     /** 1 is the watch and 2 is the alert. */
@@ -189,7 +186,7 @@ object Reporter {
             // The pin carries no words, so the battery has nowhere to go on it. Once an
             // hour it goes out as a message of its own, next to the pin that is moving.
             val now = SystemClock.elapsedRealtime()
-            if (now - lastStatusAt >= STATUS_EVERY_MS) {
+            if (now - lastStatusAt >= Settings.statusEveryMinutes(context) * 60_000L) {
                 lastStatusAt = now
                 network.execute {
                     val token = Settings.telegramToken(context)

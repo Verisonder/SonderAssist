@@ -73,6 +73,7 @@ fun AppRoot(activity: ComponentActivity) {
     var tgChat by remember { mutableStateOf(Settings.telegramChat(activity)) }
     var reportDelay by remember { mutableIntStateOf(Settings.reportDelaySeconds(activity)) }
     var reportCount by remember { mutableIntStateOf(Settings.reportCount(activity)) }
+    var statusEvery by remember { mutableIntStateOf(Settings.statusEveryMinutes(activity)) }
     var reportNote by remember { mutableStateOf(Settings.reportNote(activity)) }
     var reportRunning by remember { mutableStateOf(Settings.reportRunning(activity)) }
     val askReportPermissions = rememberLauncherForActivityResult(
@@ -522,6 +523,26 @@ fun AppRoot(activity: ComponentActivity) {
                                 Settings.setReportCount(activity, reportCount)
                             },
                             valueRange = 1f..15f,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "A written update every $statusEvery minutes",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            "The pin carries no words, so the battery goes out as a " +
+                                "message of its own next to it.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Slider(
+                            value = statusEvery.toFloat(),
+                            onValueChange = { statusEvery = it.toInt() },
+                            onValueChangeFinished = {
+                                Settings.setStatusEveryMinutes(activity, statusEvery)
+                            },
+                            valueRange = 5f..240f,
                             modifier = Modifier.fillMaxWidth(),
                         )
 
