@@ -254,9 +254,12 @@ class AlertActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        // Every time, not only the first. After going dark this screen comes back, and
-        // the second of quiet it needs on arrival it needs again on every return.
-        seenAt = SystemClock.elapsedRealtime()
+        // The first appearance only. The quiet second exists for the churn of arriving -
+        // the lock, the keyguard and the display settling against each other - and none
+        // of that happens again on a return. Re-arming it on every resume made the guard
+        // deaf for a second each time, which is exactly long enough for something to
+        // cover the screen the moment it comes back and not be noticed.
+        if (!seen) seenAt = SystemClock.elapsedRealtime()
         seen = true
 
         // Back in front, so whatever covered it has gone and there is nothing to darken
