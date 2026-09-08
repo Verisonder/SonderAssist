@@ -33,6 +33,7 @@ object Settings {
     private const val REPORT_DELAY = "report_delay"
     private const val REPORT_INTERVAL = "report_interval"
     private const val REPORT_COUNT = "report_count"
+    private const val STATUS_EVERY = "status_every"
     private const val REPORT_NOTE = "report_note"
     private const val REPORT_RUNNING = "report_running"
     private const val ALERT_LIVE = "alert_live"
@@ -59,6 +60,9 @@ object Settings {
     const val DEFAULT_REPORT_DELAY = 60
     const val DEFAULT_REPORT_INTERVAL = 120
     const val DEFAULT_REPORT_COUNT = 5
+
+    /** An hour. */
+    const val DEFAULT_STATUS_EVERY = 60
 
     const val DEFAULT_MESSAGE = "This phone is not yours."
 
@@ -303,6 +307,19 @@ object Settings {
 
     fun setAlertLive(context: Context, value: Boolean) {
         of(context).edit().putBoolean(ALERT_LIVE, value).commit()
+    }
+
+    /**
+     * How often a written update goes out, in minutes.
+     *
+     * Separate from the pin, which moves on the report interval. The pin carries no words,
+     * so this is the only thing that can say what the battery is doing.
+     */
+    fun statusEveryMinutes(context: Context): Int =
+        of(context).getInt(STATUS_EVERY, DEFAULT_STATUS_EVERY).coerceIn(5, 240)
+
+    fun setStatusEveryMinutes(context: Context, value: Int) {
+        of(context).edit().putInt(STATUS_EVERY, value.coerceIn(5, 240)).apply()
     }
 
     fun reportNote(context: Context): String? = of(context).getString(REPORT_NOTE, null)

@@ -10,8 +10,10 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
+import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.core.content.ContextCompat
 import com.verisonder.sonderassist.CrashLog
 import androidx.core.app.NotificationCompat
@@ -57,6 +59,9 @@ object Reporter {
     /** The live-location message being edited in place, once Telegram has accepted one. */
     private var liveMessageId: Long? = null
 
+    /** When the last written update went out, as opposed to the pin being moved. */
+    private var lastStatusAt = 0L
+
     /**
      * Start reporting, unless the person unlocks first.
      *
@@ -69,6 +74,7 @@ object Reporter {
         cancel()
         sent = 0
         liveMessageId = null
+        lastStatusAt = 0L
         Settings.setReportRunning(app, true)
         show(app, "Starting in ${Settings.reportDelaySeconds(app)} seconds")
         schedule(app, Settings.reportDelaySeconds(app))
@@ -173,8 +179,24 @@ object Reporter {
             // The two channels part company here. Moving the pin costs nothing, so it keeps
             // going until it is stopped. Every text is a real message to a real number, so
             // those are counted.
-            if (sent <= Settings.reportCount(context)) sendSms(context, textFor(location))
-            network.execute { sendTelegram(context, location, textFor(location)) }
+            val text = textFor(context, location)
+            if (sent <= Settings.reportCount(context)) sendSms(context, text)
+            network.execute { sendTelegram(context, location, text) }
+
+            // The pin carries no words, so the battery has nowhere to go on it. Once an
+            // hour it goes out as a message of its own, next to the pin that is moving.
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastStatusAt >= Settings.statusEveryMinutes(context) * 60_000L) {
+                lastStatusAt = now
+                network.execute {
+                    val token = Settings.telegramToken(context)
+                    val chat = Settings.telegramChat(context)
+                    if (token.isNotBlank() && chat.isNotBlank()) {
+                        call(token, "sendMessage", "chat_id=${enc(chat)}&text=${enc(text)}")
+                        Settings.noteReport(context, "hourly update sent")
+                    }
+                }
+            }
         }
 
         if (Settings.reportRunning(context)) {
@@ -250,7 +272,12 @@ object Reporter {
             val ok = call(
                 token,
                 "sendMessage",
-                "chat_id=${enc(chat)}&text=${enc("SonderAssist test - this is where the location would go.")}",
+                // The battery goes in here too, so the check proves that part reads
+                // as well as everything else.
+                "chat_id=${enc(chat)}&text=${enc(
+                    "SonderAssist test - this is where the location would go. " +
+                        battery(app),
+                )}",
             )
             Settings.noteReport(
                 app,
@@ -288,10 +315,28 @@ object Reporter {
         }.getOrNull()
     }
 
-    private fun textFor(where: Location): String {
+    private fun textFor(context: Context, where: Location): String {
         val link = "https://maps.google.com/?q=${where.latitude},${where.longitude}"
         return "SonderAssist: this phone was taken. ${where.latitude}, " +
-            "${where.longitude} (±${where.accuracy.toInt()}m) $link"
+            "${where.longitude} (±${where.accuracy.toInt()}m) ${battery(context)} $link"
+    }
+
+    /**
+     * Battery, and whether it is going up.
+     *
+     * Worth as much as the position over a long run: it says how long the phone has left to
+     * be found at all, and a phone that has started charging is a phone that has been taken
+     * somewhere rather than dropped in a street.
+     */
+    private fun battery(context: Context): String {
+        val manager = context.getSystemService(BatteryManager::class.java)
+        val level = manager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY) ?: -1
+        val charging = manager?.isCharging == true
+        return when {
+            level < 0 -> "battery unknown"
+            charging -> "battery $level%, charging"
+            else -> "battery $level%"
+        }
     }
 
     @SuppressLint("MissingPermission")
