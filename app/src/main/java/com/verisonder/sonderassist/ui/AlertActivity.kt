@@ -46,8 +46,15 @@ import com.verisonder.sonderassist.ui.theme.SonderAssistTheme
  */
 class AlertActivity : ComponentActivity() {
 
-    /** How many times this screen has fought to stay in front. */
-    private var relocks = 0
+    /**
+     * Whether this screen was ever actually in front.
+     *
+     * onPause runs during the launch itself when the display is already off, so without
+     * this the guard fires before the alert has been seen: it locks, the screen never
+     * comes up, and the phone sits dark until the power button is pressed. Nothing is
+     * guarded until there is something to guard.
+     */
+    private var seen = false
 
     private val MATCH get() = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
@@ -206,41 +213,47 @@ class AlertActivity : ComponentActivity() {
         )
     }
 
+    override fun onResume() {
+        super.onResume()
+        seen = true
+    }
+
     /**
      * Something covered the alert screen without the phone being unlocked.
      *
      * On this phone the assistant launches over the keyguard on a long press of the power
-     * button, and it lands on top of this screen: the message is gone and the gestures
-     * with it, while the alarm carries on because the service owns that. Anything that
-     * can clear the alert without the PIN is a way out for whoever took the phone.
+     * button, and it lands on top of this screen. Anything that can clear the alert
+     * without the PIN is a way out for whoever took the phone.
      *
-     * So the screen going away is treated as the signal. Locking again puts the display
-     * out and brings this back, which is the same call the detector makes and the closest
-     * an app gets to a press of the power button.
+     * So the screen going away is treated as the signal, and the answer is to put the
+     * display out and leave it out. Not to come back: a screen that reappears is a screen
+     * that can be covered again, and a phone that looks switched off is the better
+     * outcome. The alarm keeps playing either way, because the service owns it.
      *
      * Off by default, and checked first: this fights the phone for the front of the
      * display, which is not something to start doing unasked.
      *
-     * Then three guards, because a re-lock that runs when it should not is worse than the
-     * hole it closes:
-     *  - `isFinishing` means this screen is closing on purpose, including on unlock
-     *  - `RELOCK_LIMIT` stops a fight the app cannot win becoming a flickering phone
+     * Then three guards, because going dark when it should not is worse than the hole it
+     * closes:
+     *  - `seen` means this screen was actually in front, so the launch itself is not it
+     *  - `isFinishing` means it is closing on purpose, including on unlock
      *  - locking is skipped if Device Admin is not active, where it would fail anyway
      */
     override fun onPause() {
         super.onPause()
 
         if (!Settings.guardAlert(this)) return
+        // Never in front, so nothing covered it. This is the launch itself.
+        if (!seen) return
         if (isFinishing) return
-        if (relocks >= RELOCK_LIMIT) {
-            Settings.noteAlert(this, "covered again, and out of re-locks")
-            return
-        }
         if (!DeviceAdminLocker.isReady(this)) return
 
-        relocks++
-        Settings.noteAlert(this, "something covered the screen, locking again")
+        Settings.noteAlert(this, "something covered the screen, going dark")
         DeviceAdminLocker.lockNow(this)
+        // And stay dark. Without this the screen turns itself back on and comes back,
+        // which fights whatever covered it rather than leaving a phone that looks off.
+        // The alarm is unaffected - the service owns it.
+        finish()
     }
 
     /** Back does not dismiss this. Only unlocking does. */
@@ -252,13 +265,4 @@ class AlertActivity : ComponentActivity() {
         super.onDestroy()
     }
 
-    private companion object {
-        /**
-         * Enough to see off a few attempts, not enough to loop.
-         *
-         * Each one costs a screen-off and a redraw, so a phone that cannot win this
-         * should stop trying rather than strobe until the battery gives out.
-         */
-        const val RELOCK_LIMIT = 5
-    }
 }
