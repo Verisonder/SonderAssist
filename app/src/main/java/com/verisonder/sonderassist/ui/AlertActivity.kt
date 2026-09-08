@@ -173,8 +173,8 @@ class AlertActivity : ComponentActivity() {
         setContentView(
             FrameLayout(this).apply {
                 setBackgroundColor(android.graphics.Color.BLACK)
-                addView(field, MATCH, MATCH)
-                addView(hud, MATCH, MATCH)
+                addView(field, MATCH)
+                addView(hud, MATCH)
             }
         )
     }
