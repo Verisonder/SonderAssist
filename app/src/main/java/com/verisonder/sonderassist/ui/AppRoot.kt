@@ -335,6 +335,29 @@ fun AppRoot(activity: ComponentActivity) {
 
                 SectionLabel("When the alert fires")
                 Text(
+                    // Named exactly as the phone names it, because a permission the
+                    // person cannot find is a permission that stays off. This one was
+                    // found the hard way: it had been reset to Deny by a restart, the
+                    // alarm still sounded, and the screen simply never appeared.
+                    "This app needs \u201cOpen new windows while running in the " +
+                        "background\u201d, under Other permissions. Without it the alert " +
+                        "screen cannot open over the lock screen - the alarm still " +
+                        "sounds, so it half looks like it is working.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Restarting the phone can turn it off again. Worth checking after " +
+                        "a reboot.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(onClick = { openPermissions(activity) }) {
+                    Text("Open other permissions")
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
                     if (fullScreen) {
                         "Full-screen alerts are allowed."
                     } else {
@@ -374,35 +397,16 @@ fun AppRoot(activity: ComponentActivity) {
                     Text(
                         // Said outright, because the absence of a line is the finding and
                         // an absence is easy to read straight past.
-                        "If the last line is not the alert screen opening, the screen " +
-                            "never appeared. On this phone that is usually Show on Lock " +
-                            "screen or Display pop-up windows while running in the " +
-                            "background, under the app's Other permissions - both of " +
-                            "which an update can turn off again.",
+                        "If the last line is not the alert screen opening, the " +
+                            "screen never appeared, and the permission below is almost " +
+                            "always why.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.height(8.dp))
-                    FilledTonalButton(onClick = {
-                        // MIUI's own permission editor, which is where those two live.
-                        // Falls back to the standard app page everywhere else.
-                        val miui = Intent("miui.intent.action.APP_PERM_EDITOR")
-                            .setClassName(
-                                "com.miui.securitycenter",
-                                "com.miui.permcenter.permissions.PermissionsEditorActivity",
-                            )
-                            .putExtra("extra_pkgname", activity.packageName)
-                        runCatching { activity.startActivity(miui) }.onFailure {
-                            runCatching {
-                                activity.startActivity(
-                                    Intent(
-                                        AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                        android.net.Uri.parse("package:" + activity.packageName),
-                                    )
-                                )
-                            }
-                        }
-                    }) { Text("Open app permissions") }
+                    FilledTonalButton(onClick = { openPermissions(activity) }) {
+                        Text("Open other permissions")
+                    }
                 }
 
                 Spacer(Modifier.height(28.dp))
@@ -819,3 +823,28 @@ private fun canUseFullScreen(activity: ComponentActivity): Boolean =
     } else {
         true
     }
+
+/**
+ * Open the vendor's own permission editor, where the window permission lives.
+ *
+ * It is not a standard Android permission and has no standard screen, so this goes
+ * straight at the vendor activity and falls back to the ordinary app page elsewhere.
+ */
+private fun openPermissions(activity: ComponentActivity) {
+    val vendor = Intent("miui.intent.action.APP_PERM_EDITOR")
+        .setClassName(
+            "com.miui.securitycenter",
+            "com.miui.permcenter.permissions.PermissionsEditorActivity",
+        )
+        .putExtra("extra_pkgname", activity.packageName)
+    runCatching { activity.startActivity(vendor) }.onFailure {
+        runCatching {
+            activity.startActivity(
+                Intent(
+                    AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + activity.packageName),
+                )
+            )
+        }
+    }
+}
