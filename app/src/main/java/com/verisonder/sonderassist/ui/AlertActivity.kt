@@ -29,6 +29,7 @@ import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.TextView
 import com.verisonder.sonderassist.Settings
+import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.sensor.WatchService
 import com.verisonder.sonderassist.ui.theme.SonderAssistTheme
 
@@ -44,6 +45,9 @@ import com.verisonder.sonderassist.ui.theme.SonderAssistTheme
  * note.
  */
 class AlertActivity : ComponentActivity() {
+
+    /** How many times this screen has fought to stay in front. */
+    private var relocks = 0
 
     private val MATCH get() = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
@@ -202,6 +206,39 @@ class AlertActivity : ComponentActivity() {
         )
     }
 
+    /**
+     * Something covered the alert screen without the phone being unlocked.
+     *
+     * On this phone the assistant launches over the keyguard on a long press of the power
+     * button, and it lands on top of this screen: the message is gone and the gestures
+     * with it, while the alarm carries on because the service owns that. Anything that
+     * can clear the alert without the PIN is a way out for whoever took the phone.
+     *
+     * So the screen going away is treated as the signal. Locking again puts the display
+     * out and brings this back, which is the same call the detector makes and the closest
+     * an app gets to a press of the power button.
+     *
+     * Three guards, because a re-lock that runs when it should not is worse than the hole
+     * it closes:
+     *  - `isFinishing` means this screen is closing on purpose, including on unlock
+     *  - `RELOCK_LIMIT` stops a fight the app cannot win becoming a flickering phone
+     *  - locking is skipped if Device Admin is not active, where it would fail anyway
+     */
+    override fun onPause() {
+        super.onPause()
+
+        if (isFinishing) return
+        if (relocks >= RELOCK_LIMIT) {
+            Settings.noteAlert(this, "covered again, and out of re-locks")
+            return
+        }
+        if (!DeviceAdminLocker.isReady(this)) return
+
+        relocks++
+        Settings.noteAlert(this, "something covered the screen, locking again")
+        DeviceAdminLocker.lockNow(this)
+    }
+
     /** Back does not dismiss this. Only unlocking does. */
     @Deprecated("Back is deliberately inert here")
     override fun onBackPressed() = Unit
@@ -209,5 +246,15 @@ class AlertActivity : ComponentActivity() {
     override fun onDestroy() {
         runCatching { unregisterReceiver(unlocked) }
         super.onDestroy()
+    }
+
+    private companion object {
+        /**
+         * Enough to see off a few attempts, not enough to loop.
+         *
+         * Each one costs a screen-off and a redraw, so a phone that cannot win this
+         * should stop trying rather than strobe until the battery gives out.
+         */
+        const val RELOCK_LIMIT = 5
     }
 }
