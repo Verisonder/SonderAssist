@@ -67,10 +67,19 @@ class WatchService : Service(), SensorEventListener {
                     // The owner is holding it. Nothing more goes out, and the pin is
                     // taken down rather than left counting.
                     runCatching { Reporter.stop(context ?: this@WatchService) }
+                    // Unlocked, so there is nothing left to put back up.
+                    Settings.setAlertLive(this@WatchService, false)
                     startListening()
                 }
 
                 Intent.ACTION_SCREEN_OFF -> stopListening()
+
+                // The screen has come back while an alert is still standing. Put it up
+                // again: the home gesture sends this task to the background, so there is
+                // nothing left to resume on its own and the keyguard is all that shows.
+                Intent.ACTION_SCREEN_ON -> {
+                    if (Settings.alertLive(this@WatchService)) showAlert()
+                }
 
                 // The alert screen asks; the service acts. Structural rule: the sound
                 // belongs to the service, so a screen that Android refuses to open
@@ -83,6 +92,13 @@ class WatchService : Service(), SensorEventListener {
 
                 // The Stop action on the reporting notification.
                 ACTION_STOP_REPORT -> Reporter.stop(this@WatchService)
+
+                // The gesture cleared the alert deliberately. Unlike the guard, which only
+                // hides it, this one means it should not come back.
+                ACTION_DISMISS -> {
+                    Alarm.stop()
+                    Settings.setAlertLive(this@WatchService, false)
+                }
             }
         }
     }
@@ -110,9 +126,11 @@ class WatchService : Service(), SensorEventListener {
             IntentFilter().apply {
                 addAction(Intent.ACTION_USER_PRESENT)
                 addAction(Intent.ACTION_SCREEN_OFF)
+                addAction(Intent.ACTION_SCREEN_ON)
                 addAction(ACTION_SILENCE)
                 addAction(ACTION_RESOUND)
                 addAction(ACTION_STOP_REPORT)
+                addAction(ACTION_DISMISS)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -205,6 +223,7 @@ class WatchService : Service(), SensorEventListener {
         Settings.noteAlert(this, "detected a grab", fresh = true)
         DeviceAdminLocker.lockNow(this)
         Settings.noteAlert(this, "locked the screen")
+        Settings.setAlertLive(this, true)
 
         // After the lock, never before it. Locking is the protection; this only makes it
         // harder to undo, and it must not be able to delay or prevent the thing that
@@ -368,6 +387,13 @@ class WatchService : Service(), SensorEventListener {
          */
         fun silence(context: Context) {
             context.sendBroadcast(Intent(ACTION_SILENCE).setPackage(context.packageName))
+        }
+
+        private const val ACTION_DISMISS = "com.verisonder.sonderassist.DISMISS"
+
+        /** The alert was cleared on purpose, so stop putting it back. */
+        fun dismiss(context: Context) {
+            context.sendBroadcast(Intent(ACTION_DISMISS).setPackage(context.packageName))
         }
 
         private const val ACTION_RESOUND = "com.verisonder.sonderassist.RESOUND"
