@@ -64,8 +64,9 @@ class WatchService : Service(), SensorEventListener {
                     // The person is back. Whatever was closed comes open again, and
                     // this is the path that runs in the ordinary case.
                     runCatching { PowerMenu.restore(context ?: this@WatchService) }
-                    // The owner is holding it. Nothing more goes out.
-                    runCatching { Reporter.cancel() }
+                    // The owner is holding it. Nothing more goes out, and the pin is
+                    // taken down rather than left counting.
+                    runCatching { Reporter.stop(context ?: this@WatchService) }
                     startListening()
                 }
 
@@ -79,6 +80,9 @@ class WatchService : Service(), SensorEventListener {
                 // The alert screen went dark and has come back. The sound belongs to
                 // the service, so restarting it is asked for rather than done there.
                 ACTION_RESOUND -> Alarm.scheduleAfterGrace(this@WatchService)
+
+                // The Stop action on the reporting notification.
+                ACTION_STOP_REPORT -> Reporter.stop(this@WatchService)
             }
         }
     }
@@ -108,6 +112,7 @@ class WatchService : Service(), SensorEventListener {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(ACTION_SILENCE)
                 addAction(ACTION_RESOUND)
+                addAction(ACTION_STOP_REPORT)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -366,6 +371,15 @@ class WatchService : Service(), SensorEventListener {
         }
 
         private const val ACTION_RESOUND = "com.verisonder.sonderassist.RESOUND"
+
+        /**
+         * The Stop action on the reporting notification.
+         *
+         * Not private: the notification is built in Reporter and has to name it. Still
+         * app-private in practice, since the receiver is registered RECEIVER_NOT_EXPORTED
+         * and the intent carries the package.
+         */
+        const val ACTION_STOP_REPORT = "com.verisonder.sonderassist.STOP_REPORT"
 
         /** Start the sound again, on the same terms as the first time. */
         fun resound(context: Context) {

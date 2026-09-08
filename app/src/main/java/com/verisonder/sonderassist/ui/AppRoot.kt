@@ -46,6 +46,7 @@ import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.Keepalive
 import com.verisonder.sonderassist.security.PowerMenu
+import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.sensor.WatchService
 
 /**
@@ -73,6 +74,7 @@ fun AppRoot(activity: ComponentActivity) {
     var reportDelay by remember { mutableIntStateOf(Settings.reportDelaySeconds(activity)) }
     var reportCount by remember { mutableIntStateOf(Settings.reportCount(activity)) }
     var reportNote by remember { mutableStateOf(Settings.reportNote(activity)) }
+    var reportRunning by remember { mutableStateOf(Settings.reportRunning(activity)) }
     val askReportPermissions = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
@@ -155,6 +157,7 @@ fun AppRoot(activity: ComponentActivity) {
                 suppressed = Settings.powerMenuSuppressed(activity)
                 alertNote = Settings.alertNote(activity)
                 reportNote = Settings.reportNote(activity)
+                reportRunning = Settings.reportRunning(activity)
                 fullScreen = canUseFullScreen(activity)
                 tileNote = Settings.tileNote(activity)
             }
@@ -500,7 +503,7 @@ fun AppRoot(activity: ComponentActivity) {
 
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "Wait $reportDelay seconds, then send $reportCount times",
+                            "Wait $reportDelay seconds, then send $reportCount texts",
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Slider(
@@ -520,6 +523,13 @@ fun AppRoot(activity: ComponentActivity) {
                             },
                             valueRange = 1f..15f,
                             modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Text(
+                            "The Telegram pin keeps moving until you stop it. Only the " +
+                                "texts are counted, because each one is a real message.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
 
                         Spacer(Modifier.height(16.dp))
@@ -552,7 +562,34 @@ fun AppRoot(activity: ComponentActivity) {
                         TextButton(onClick = {
                             Settings.setTelegramToken(activity, tgToken)
                             Settings.setTelegramChat(activity, tgChat)
+                            // Read back, so the field shows the id that was kept rather
+                            // than the link it was pulled out of.
+                            tgChat = Settings.telegramChat(activity)
                         }) { Text("Save Telegram") }
+
+                        Text(
+                            "Paste the id, the web.telegram.org link, or a markdown link " +
+                                "- the number is taken out of it. A public channel's @name " +
+                                "works too.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        FilledTonalButton(onClick = {
+                            Reporter.test(activity)
+                            // The checks are quick but not instant, so the answer lands in
+                            // the trail below rather than in a dialog that would have to
+                            // wait for the network.
+                            reportNote = Settings.reportNote(activity)
+                        }) { Text("Check all of this") }
+                        Text(
+                            "Sends a real message to the group and reads back every " +
+                                "permission. The result appears below - reopen this screen " +
+                                "if the Telegram lines have not arrived yet.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
                         Spacer(Modifier.height(12.dp))
                         Text(
@@ -565,6 +602,25 @@ fun AppRoot(activity: ComponentActivity) {
                         Spacer(Modifier.height(8.dp))
                         FilledTonalButton(onClick = { openPermissions(activity) }) {
                             Text("Open permissions")
+                        }
+
+                        if (reportRunning) {
+                            Spacer(Modifier.height(16.dp))
+                            Text("Sending now.", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                // Said plainly: on a phone that has been taken this button
+                                // cannot be reached, and unlocking is what stops it.
+                                "Unlocking the phone stops this on its own. This button " +
+                                    "is for when it is back in your hands.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = {
+                                Reporter.stop(activity)
+                                reportRunning = false
+                                reportNote = Settings.reportNote(activity)
+                            }) { Text("Stop sending") }
                         }
 
                         reportNote?.let { note ->

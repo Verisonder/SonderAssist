@@ -34,6 +34,7 @@ object Settings {
     private const val REPORT_INTERVAL = "report_interval"
     private const val REPORT_COUNT = "report_count"
     private const val REPORT_NOTE = "report_note"
+    private const val REPORT_RUNNING = "report_running"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
@@ -219,8 +220,26 @@ object Settings {
 
     fun telegramChat(context: Context): String = of(context).getString(TG_CHAT, "").orEmpty()
 
+    /**
+     * Take the id out of whatever was pasted.
+     *
+     * A chat id is copied from Telegram in several shapes - the bare number, the web URL it
+     * sits at the end of, or a markdown link carrying both. The API wants only the number,
+     * and a URL sent as a chat id fails with an error nobody would connect to a stray
+     * bracket. So it is pulled out here, once, rather than being something to remember.
+     *
+     * A leading @ is left alone: Telegram accepts a public channel's name in place of an id,
+     * and that is a deliberate choice rather than a mistake to correct.
+     */
     fun setTelegramChat(context: Context, value: String) {
-        of(context).edit().putString(TG_CHAT, value.trim()).apply()
+        val text = value.trim()
+        val id = when {
+            text.startsWith("@") -> text.takeWhile { !it.isWhitespace() }
+            // Long enough not to match a stray digit in a hostname, and the minus sign
+            // matters: group ids carry it and the API rejects the number without it.
+            else -> Regex("-?\\d{5,}").find(text)?.value ?: text
+        }
+        of(context).edit().putString(TG_CHAT, id).apply()
     }
 
     /**
@@ -243,6 +262,12 @@ object Settings {
         of(context).edit().putInt(REPORT_INTERVAL, value.coerceIn(30, 1800)).apply()
     }
 
+    /**
+     * How many text messages to send.
+     *
+     * Only the texts are counted. Moving the Telegram pin costs nothing and carries on
+     * until it is stopped, but every message is a real one to a real number.
+     */
     fun reportCount(context: Context): Int =
         of(context).getInt(REPORT_COUNT, DEFAULT_REPORT_COUNT).coerceIn(1, 30)
 
@@ -250,12 +275,29 @@ object Settings {
         of(context).edit().putInt(REPORT_COUNT, value.coerceIn(1, 30)).apply()
     }
 
+    /**
+     * Whether a report is in progress.
+     *
+     * Kept on disk rather than in memory so the screen can offer to stop it even if the
+     * app was closed and reopened while it ran.
+     */
+    fun reportRunning(context: Context): Boolean =
+        of(context).getBoolean(REPORT_RUNNING, false)
+
+    fun setReportRunning(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(REPORT_RUNNING, value).commit()
+    }
+
     fun reportNote(context: Context): String? = of(context).getString(REPORT_NOTE, null)
 
-    fun noteReport(context: Context, what: String) {
+    fun noteReport(context: Context, what: String, fresh: Boolean = false) {
         val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
             .format(java.util.Date())
-        val kept = reportNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        val kept = if (fresh) {
+            emptyList()
+        } else {
+            reportNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        }
         of(context).edit()
             .putString(REPORT_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
             .commit()

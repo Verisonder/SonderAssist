@@ -2,7 +2,11 @@ package com.verisonder.sonderassist.report
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
@@ -10,7 +14,9 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.verisonder.sonderassist.CrashLog
+import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.Settings
+import com.verisonder.sonderassist.sensor.WatchService
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -37,6 +43,11 @@ import java.util.concurrent.Executors
  */
 object Reporter {
 
+    private const val CHANNEL_ID = "report"
+
+    /** 1 is the watch and 2 is the alert. */
+    private const val NOTIFICATION_ID = 3
+
     private val handler = Handler(Looper.getMainLooper())
     private val network = Executors.newSingleThreadExecutor()
 
@@ -58,7 +69,34 @@ object Reporter {
         cancel()
         sent = 0
         liveMessageId = null
+        Settings.setReportRunning(app, true)
+        show(app, "Starting in ${Settings.reportDelaySeconds(app)} seconds")
         schedule(app, Settings.reportDelaySeconds(app))
+    }
+
+    /**
+     * Stop, and take the pin down with it.
+     *
+     * Reached from unlocking and from the button on the screen. On a phone that has been
+     * taken the button is out of reach, so unlocking is the one that matters; the button is
+     * for afterwards, when it is back.
+     */
+    @Synchronized
+    fun stop(context: Context) {
+        val app = context.applicationContext
+        cancel()
+        Settings.setReportRunning(app, false)
+        hide(app)
+        val id = liveMessageId ?: return
+        liveMessageId = null
+        network.execute {
+            call(
+                Settings.telegramToken(app),
+                "stopMessageLiveLocation",
+                "chat_id=${enc(Settings.telegramChat(app))}&message_id=$id",
+            )
+            Settings.noteReport(app, "stopped")
+        }
     }
 
     /**
@@ -71,6 +109,50 @@ object Reporter {
     fun cancel() {
         pending?.let { handler.removeCallbacks(it) }
         pending = null
+    }
+
+    /**
+     * A standing notification for as long as this is running.
+     *
+     * The pin in the group cannot say whether it is still being moved - a live location that
+     * has stopped updating looks exactly like one that has not. Only the phone knows, so the
+     * phone is what says so, and it says so continuously rather than once.
+     *
+     * Ongoing, so it cannot be swiped away by accident, and carrying the stop action so the
+     * answer to "is this still running" and the way to end it are the same thing.
+     */
+    private fun show(context: Context, detail: String) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                "Sending the location",
+                // Low: this is a state to be able to check, not an interruption. It is
+                // already accompanied by an alarm.
+                NotificationManager.IMPORTANCE_LOW,
+            )
+        )
+        val stop = PendingIntent.getBroadcast(
+            context,
+            0,
+            Intent(WatchService.ACTION_STOP_REPORT).setPackage(context.packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager.notify(
+            NOTIFICATION_ID,
+            NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle("Live location is being sent")
+                .setContentText(detail)
+                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .addAction(0, "Stop", stop)
+                .build(),
+        )
+    }
+
+    private fun hide(context: Context) {
+        context.getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
     }
 
     private fun schedule(context: Context, seconds: Int) {
@@ -88,15 +170,97 @@ object Reporter {
         if (location == null) {
             Settings.noteReport(context, "no position yet")
         } else {
-            send(context, location)
+            // The two channels part company here. Moving the pin costs nothing, so it keeps
+            // going until it is stopped. Every text is a real message to a real number, so
+            // those are counted.
+            if (sent <= Settings.reportCount(context)) sendSms(context, textFor(location))
+            network.execute { sendTelegram(context, location, textFor(location)) }
         }
 
-        // Repeats are worth having - a single fix taken indoors can be a long way out - but
-        // each SMS is a real message with a real cost, so they are counted rather than endless.
-        if (sent < Settings.reportCount(context)) {
-            schedule(context, Settings.reportIntervalSeconds(context))
+        if (Settings.reportRunning(context)) {
+            val next = Settings.reportIntervalSeconds(context)
+            show(
+                context,
+                "$sent sent, the next in $next seconds. Unlocking the phone stops it.",
+            )
+            schedule(context, next)
         } else {
-            Settings.noteReport(context, "done, $sent sent")
+            Settings.noteReport(context, "stopped after $sent")
+        }
+    }
+
+    /**
+     * Check everything before it matters.
+     *
+     * Every part of this can only fail at the worst possible moment, and by then nobody is
+     * watching. So each piece is asked directly: the token against getMe, the chat id by
+     * sending a real message to it, and the two permissions by reading them.
+     */
+    fun test(context: Context) {
+        val app = context.applicationContext
+        Settings.noteReport(app, "checking", fresh = true)
+
+        val sms = ContextCompat.checkSelfPermission(app, Manifest.permission.SEND_SMS) ==
+            PackageManager.PERMISSION_GRANTED
+        val where = ContextCompat.checkSelfPermission(
+            app,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+
+        Settings.noteReport(
+            app,
+            when {
+                Settings.smsNumber(app).isBlank() -> "no number, so no text will be sent"
+                !sms -> "a number is set, but sending messages is not allowed"
+                else -> "the number and permission are in place"
+            },
+        )
+        Settings.noteReport(
+            app,
+            if (where) {
+                "location is allowed - check it is allowed all the time"
+            } else {
+                "location is not allowed, so there is nothing to send"
+            },
+        )
+        if (lastKnown(app) == null) {
+            Settings.noteReport(app, "the phone has no position stored yet")
+        }
+
+        network.execute {
+            val token = Settings.telegramToken(app)
+            if (token.isBlank()) {
+                Settings.noteReport(app, "no bot token")
+                return@execute
+            }
+            val me = call(token, "getMe", "")
+            if (me == null) {
+                Settings.noteReport(app, "the bot token was rejected")
+                return@execute
+            }
+            val name = runCatching {
+                JSONObject(me).getJSONObject("result").optString("username")
+            }.getOrNull().orEmpty()
+
+            val chat = Settings.telegramChat(app)
+            if (chat.isBlank()) {
+                Settings.noteReport(app, "bot @$name works, but no chat id")
+                return@execute
+            }
+            val ok = call(
+                token,
+                "sendMessage",
+                "chat_id=${enc(chat)}&text=${enc("SonderAssist test - this is where the location would go.")}",
+            )
+            Settings.noteReport(
+                app,
+                if (ok != null) {
+                    "bot @$name reached $chat"
+                } else {
+                    // The usual cause, and the one nobody thinks of.
+                    "the chat id was rejected - is the bot in that group?"
+                },
+            )
         }
     }
 
@@ -124,13 +288,10 @@ object Reporter {
         }.getOrNull()
     }
 
-    private fun send(context: Context, where: Location) {
+    private fun textFor(where: Location): String {
         val link = "https://maps.google.com/?q=${where.latitude},${where.longitude}"
-        val text = "SonderAssist: this phone was taken. ${where.latitude}, " +
+        return "SonderAssist: this phone was taken. ${where.latitude}, " +
             "${where.longitude} (±${where.accuracy.toInt()}m) $link"
-
-        sendSms(context, text)
-        network.execute { sendTelegram(context, where, text) }
     }
 
     @SuppressLint("MissingPermission")
@@ -181,8 +342,9 @@ object Reporter {
             return
         }
 
-        val period = (Settings.reportIntervalSeconds(context) * Settings.reportCount(context))
-            .coerceIn(60, 86_400)
+        // The longest Telegram allows. The pin is meant to keep moving until it is
+        // stopped, so tying its life to a message count would have it expire mid-run.
+        val period = 86_400
         val body = call(
             token,
             "sendLocation",
