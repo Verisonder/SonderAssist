@@ -79,7 +79,7 @@ class WatchService : Service(), SensorEventListener {
                 // nothing left to resume on its own and the keyguard is all that shows.
                 Intent.ACTION_SCREEN_ON -> {
                     if (Settings.alertLive(this@WatchService)) {
-                        showAlert()
+                        showAlert(notify = false)
                         // And the sound, from here rather than from the screen. The screen
                         // that knew it had gone quiet is gone - this is a fresh one - so
                         // asking it to remember would be asking the wrong thing. The
@@ -100,7 +100,7 @@ class WatchService : Service(), SensorEventListener {
                 // home gesture, which no app can block. Nothing needs to go dark for
                 // that; the screen is still on and the alert simply goes back in front.
                 ACTION_REASSERT -> {
-                    if (Settings.alertLive(this@WatchService)) showAlert()
+                    if (Settings.alertLive(this@WatchService)) showAlert(notify = false)
                 }
 
                 // The gesture cleared the alert deliberately. Unlike the guard, which only
@@ -271,9 +271,14 @@ class WatchService : Service(), SensorEventListener {
      * notification is still there on the lock screen and the alarm is still sounding.
      * The direct start is kept as well, because when it is allowed it is instant.
      */
-    private fun showAlert() {
+    private fun showAlert(notify: Boolean = true) {
         val intent = Intent(this, com.verisonder.sonderassist.ui.AlertActivity::class.java)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
+            // NEW_TASK because this comes from a service. CLEAR_TASK was here too and
+            // worked against launchMode singleTask: it tears the task down and builds a
+            // new one on every start, so a second start makes a second screen instead of
+            // being delivered to the one already showing. Without it the alert is reused,
+            // which is what singleTask was chosen for.
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         val pending = android.app.PendingIntent.getActivity(
             this,
             0,
@@ -283,6 +288,19 @@ class WatchService : Service(), SensorEventListener {
         )
 
         val manager = getSystemService(NotificationManager::class.java)
+
+        // Only the first time. The notification and the direct start are two ways into the
+        // same screen, kept together because either can be refused - but the alert is now
+        // destroyed and rebuilt on every return rather than reused, so on a re-show both
+        // succeed and it opens twice, one on top of the other. The screen is already on by
+        // then, which is exactly when the direct start is the one that works.
+        if (!notify) {
+            manager.cancel(ALERT_NOTIFICATION_ID)
+            startActivity(intent)
+            Settings.noteAlert(this, "put the alert back")
+            return
+        }
+
         manager.createNotificationChannel(
             NotificationChannel(
                 ALERT_CHANNEL_ID,
