@@ -2,7 +2,11 @@ package com.verisonder.sonderassist.report
 
 import android.Manifest
 import android.annotation.SuppressLint
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationManager
@@ -10,7 +14,9 @@ import android.os.Handler
 import android.os.Looper
 import androidx.core.content.ContextCompat
 import com.verisonder.sonderassist.CrashLog
+import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.Settings
+import com.verisonder.sonderassist.sensor.WatchService
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -37,6 +43,11 @@ import java.util.concurrent.Executors
  */
 object Reporter {
 
+    private const val CHANNEL_ID = "report"
+
+    /** 1 is the watch and 2 is the alert. */
+    private const val NOTIFICATION_ID = 3
+
     private val handler = Handler(Looper.getMainLooper())
     private val network = Executors.newSingleThreadExecutor()
 
@@ -59,6 +70,7 @@ object Reporter {
         sent = 0
         liveMessageId = null
         Settings.setReportRunning(app, true)
+        show(app, "Starting in ${Settings.reportDelaySeconds(app)} seconds")
         schedule(app, Settings.reportDelaySeconds(app))
     }
 
@@ -74,6 +86,7 @@ object Reporter {
         val app = context.applicationContext
         cancel()
         Settings.setReportRunning(app, false)
+        hide(app)
         val id = liveMessageId ?: return
         liveMessageId = null
         network.execute {
@@ -96,6 +109,50 @@ object Reporter {
     fun cancel() {
         pending?.let { handler.removeCallbacks(it) }
         pending = null
+    }
+
+    /**
+     * A standing notification for as long as this is running.
+     *
+     * The pin in the group cannot say whether it is still being moved - a live location that
+     * has stopped updating looks exactly like one that has not. Only the phone knows, so the
+     * phone is what says so, and it says so continuously rather than once.
+     *
+     * Ongoing, so it cannot be swiped away by accident, and carrying the stop action so the
+     * answer to "is this still running" and the way to end it are the same thing.
+     */
+    private fun show(context: Context, detail: String) {
+        val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                CHANNEL_ID,
+                "Sending the location",
+                // Low: this is a state to be able to check, not an interruption. It is
+                // already accompanied by an alarm.
+                NotificationManager.IMPORTANCE_LOW,
+            )
+        )
+        val stop = PendingIntent.getBroadcast(
+            context,
+            0,
+            Intent(WatchService.ACTION_STOP_REPORT).setPackage(context.packageName),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager.notify(
+            NOTIFICATION_ID,
+            NotificationCompat.Builder(context, CHANNEL_ID)
+                .setContentTitle("Live location is being sent")
+                .setContentText(detail)
+                .setSmallIcon(android.R.drawable.ic_menu_mylocation)
+                .setOngoing(true)
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .addAction(0, "Stop", stop)
+                .build(),
+        )
+    }
+
+    private fun hide(context: Context) {
+        context.getSystemService(NotificationManager::class.java)?.cancel(NOTIFICATION_ID)
     }
 
     private fun schedule(context: Context, seconds: Int) {
@@ -121,7 +178,12 @@ object Reporter {
         }
 
         if (Settings.reportRunning(context)) {
-            schedule(context, Settings.reportIntervalSeconds(context))
+            val next = Settings.reportIntervalSeconds(context)
+            show(
+                context,
+                "$sent sent, the next in $next seconds. Unlocking the phone stops it.",
+            )
+            schedule(context, next)
         } else {
             Settings.noteReport(context, "stopped after $sent")
         }
