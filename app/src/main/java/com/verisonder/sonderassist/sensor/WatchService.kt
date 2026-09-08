@@ -93,10 +93,6 @@ class WatchService : Service(), SensorEventListener {
                 // cannot take the alarm down with it.
                 ACTION_SILENCE -> Alarm.stop()
 
-                // The alert screen went dark and has come back. The sound belongs to
-                // the service, so restarting it is asked for rather than done there.
-                ACTION_RESOUND -> Alarm.scheduleAfterGrace(this@WatchService)
-
                 // The Stop action on the reporting notification.
                 ACTION_STOP_REPORT -> Reporter.stop(this@WatchService)
 
@@ -135,7 +131,6 @@ class WatchService : Service(), SensorEventListener {
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(ACTION_SILENCE)
-                addAction(ACTION_RESOUND)
                 addAction(ACTION_STOP_REPORT)
                 addAction(ACTION_DISMISS)
             },
@@ -403,8 +398,6 @@ class WatchService : Service(), SensorEventListener {
             context.sendBroadcast(Intent(ACTION_DISMISS).setPackage(context.packageName))
         }
 
-        private const val ACTION_RESOUND = "com.verisonder.sonderassist.RESOUND"
-
         /**
          * The Stop action on the reporting notification.
          *
@@ -413,10 +406,5 @@ class WatchService : Service(), SensorEventListener {
          * and the intent carries the package.
          */
         const val ACTION_STOP_REPORT = "com.verisonder.sonderassist.STOP_REPORT"
-
-        /** Start the sound again, on the same terms as the first time. */
-        fun resound(context: Context) {
-            context.sendBroadcast(Intent(ACTION_RESOUND).setPackage(context.packageName))
-        }
     }
 }
