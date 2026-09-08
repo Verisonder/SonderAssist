@@ -5,6 +5,8 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
+import android.os.PowerManager
+import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.Image
@@ -55,6 +57,12 @@ class AlertActivity : ComponentActivity() {
      * guarded until there is something to guard.
      */
     private var seen = false
+
+    /** When it last came up, so the guard can ignore its own arrival. */
+    private var seenAt = 0L
+
+    /** Whether the guard put the display out and this screen is waiting to come back. */
+    private var wentDark = false
 
     private val MATCH get() = FrameLayout.LayoutParams(
         FrameLayout.LayoutParams.MATCH_PARENT,
@@ -215,7 +223,18 @@ class AlertActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        // Every time, not only the first. After going dark this screen comes back, and
+        // the second of quiet it needs on arrival it needs again on every return.
+        seenAt = SystemClock.elapsedRealtime()
         seen = true
+
+        if (wentDark && !isFinishing) {
+            wentDark = false
+            // The screen is back, so the alarm comes back with it. Asked of the service,
+            // which owns the sound.
+            Settings.noteAlert(this, "the screen came back, sounding again")
+            WatchService.resound(this)
+        }
     }
 
     /**
@@ -225,10 +244,12 @@ class AlertActivity : ComponentActivity() {
      * button, and it lands on top of this screen. Anything that can clear the alert
      * without the PIN is a way out for whoever took the phone.
      *
-     * So the screen going away is treated as the signal, and the answer is to put the
-     * display out and leave it out. Not to come back: a screen that reappears is a screen
-     * that can be covered again, and a phone that looks switched off is the better
-     * outcome. The alarm keeps playing either way, because the service owns it.
+     * So the screen going away is treated as the signal, and the answer is to look like a
+     * phone that has been switched off: display out, sound stopped. Whoever is holding it
+     * sees nothing to work with.
+     *
+     * This screen is not finished, though. It waits behind the dark display, so turning
+     * the screen back on brings the alert and the sound straight back - see [onResume].
      *
      * Off by default, and checked first: this fights the phone for the front of the
      * display, which is not something to start doing unasked.
@@ -236,7 +257,11 @@ class AlertActivity : ComponentActivity() {
      * Then three guards, because going dark when it should not is worse than the hole it
      * closes:
      *  - `seen` means this screen was actually in front, so the launch itself is not it
+     *  - a second must have passed, which is longer than the churn of arriving and much
+     *    shorter than anyone reaching for the phone
      *  - `isFinishing` means it is closing on purpose, including on unlock
+     *  - the display must still be on, or this is the screen going off rather than
+     *    something covering it
      *  - locking is skipped if Device Admin is not active, where it would fail anyway
      */
     override fun onPause() {
@@ -246,14 +271,35 @@ class AlertActivity : ComponentActivity() {
         // Never in front, so nothing covered it. This is the launch itself.
         if (!seen) return
         if (isFinishing) return
+
+        // Everything that goes wrong here goes wrong in the first moment: the lock, the
+        // keyguard, the display coming on and this window being placed all pause and
+        // resume against each other while the alert is arriving. A second is longer than
+        // any of that and far shorter than picking a phone up and holding a button.
+        if (SystemClock.elapsedRealtime() - seenAt < ARM_DELAY_MS) return
+
+        // The one that matters. onPause does not mean "something covered me" - it also
+        // fires when the display goes off, which happens moments after this screen
+        // appears. Treating that as a cover locked and finished the alert immediately,
+        // so turning the screen back on showed nothing and only the alarm was left.
+        //
+        // Being covered by another window leaves the display on. That is the difference,
+        // and it is the only signal available without a permission that watches every app
+        // the phone runs.
+        val display = getSystemService(PowerManager::class.java)
+        if (display?.isInteractive != true) return
+
         if (!DeviceAdminLocker.isReady(this)) return
 
+        wentDark = true
         Settings.noteAlert(this, "something covered the screen, going dark")
+
+        // Silent as well as dark. A phone that is making a noise is not a phone that
+        // looks switched off, and the point of going dark is that it should.
+        WatchService.silence(this)
         DeviceAdminLocker.lockNow(this)
-        // And stay dark. Without this the screen turns itself back on and comes back,
-        // which fights whatever covered it rather than leaving a phone that looks off.
-        // The alarm is unaffected - the service owns it.
-        finish()
+        // Not finished. This screen stays alive behind the dark display so that turning
+        // it back on brings the alert back rather than nothing at all.
     }
 
     /** Back does not dismiss this. Only unlocking does. */
@@ -265,4 +311,8 @@ class AlertActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    private companion object {
+        /** How long the alert ignores being paused after it arrives. */
+        const val ARM_DELAY_MS = 1_000L
+    }
 }

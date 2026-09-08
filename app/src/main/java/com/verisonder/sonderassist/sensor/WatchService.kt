@@ -72,6 +72,10 @@ class WatchService : Service(), SensorEventListener {
                 // belongs to the service, so a screen that Android refuses to open
                 // cannot take the alarm down with it.
                 ACTION_SILENCE -> Alarm.stop()
+
+                // The alert screen went dark and has come back. The sound belongs to
+                // the service, so restarting it is asked for rather than done there.
+                ACTION_RESOUND -> Alarm.scheduleAfterGrace(this@WatchService)
             }
         }
     }
@@ -100,6 +104,7 @@ class WatchService : Service(), SensorEventListener {
                 addAction(Intent.ACTION_USER_PRESENT)
                 addAction(Intent.ACTION_SCREEN_OFF)
                 addAction(ACTION_SILENCE)
+                addAction(ACTION_RESOUND)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -351,6 +356,13 @@ class WatchService : Service(), SensorEventListener {
          */
         fun silence(context: Context) {
             context.sendBroadcast(Intent(ACTION_SILENCE).setPackage(context.packageName))
+        }
+
+        private const val ACTION_RESOUND = "com.verisonder.sonderassist.RESOUND"
+
+        /** Start the sound again, on the same terms as the first time. */
+        fun resound(context: Context) {
+            context.sendBroadcast(Intent(ACTION_RESOUND).setPackage(context.packageName))
         }
     }
 }
