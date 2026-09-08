@@ -35,6 +35,7 @@ object Settings {
     private const val REPORT_COUNT = "report_count"
     private const val REPORT_NOTE = "report_note"
     private const val REPORT_RUNNING = "report_running"
+    private const val ALERT_LIVE = "alert_live"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
@@ -286,6 +287,22 @@ object Settings {
 
     fun setReportRunning(context: Context, value: Boolean) {
         of(context).edit().putBoolean(REPORT_RUNNING, value).commit()
+    }
+
+    /**
+     * Whether an alert is still standing.
+     *
+     * Not the same as the alert screen existing. The home gesture sends the whole task to
+     * the background, so waking the phone lands on the keyguard with nothing to resume -
+     * the screen has to be put up again rather than left to come back. This is what says
+     * whether it should be.
+     *
+     * Cleared by unlocking, and by the gesture that dismisses the alert on purpose.
+     */
+    fun alertLive(context: Context): Boolean = of(context).getBoolean(ALERT_LIVE, false)
+
+    fun setAlertLive(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(ALERT_LIVE, value).commit()
     }
 
     fun reportNote(context: Context): String? = of(context).getString(REPORT_NOTE, null)

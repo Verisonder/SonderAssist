@@ -223,9 +223,10 @@ class AlertActivity : ComponentActivity() {
         val hud = HudView(this).apply {
             onFingers = { points, count -> field.lightUnder(points, count) }
             onLoad = {
-                // Asked of the service, which owns the sound. Stopping it from here
-                // would put the alarm back inside the window it was taken out of.
-                WatchService.silence(this@AlertActivity)
+                // Dismissed on purpose, which is different from being covered: the guard
+                // only hides the alert and the service puts it back when the screen
+                // returns. This says it should not.
+                WatchService.dismiss(this@AlertActivity)
                 finish()
             }
         }
