@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import android.os.Build
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.verisonder.sonderassist.CrashLog
@@ -62,6 +63,8 @@ fun AppRoot(activity: ComponentActivity) {
     var crash by remember { mutableStateOf(CrashLog.read(activity)) }
     var jarvis by remember { mutableStateOf(Settings.jarvis(activity)) }
     var blockPower by remember { mutableStateOf(Settings.blockPowerMenu(activity)) }
+    var alertNote by remember { mutableStateOf(Settings.alertNote(activity)) }
+    var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
     var shizuku by remember { mutableStateOf(PowerMenu.available()) }
     var shizukuAsk by remember { mutableStateOf(PowerMenu.needsPermission()) }
     var suppressed by remember { mutableStateOf(Settings.powerMenuSuppressed(activity)) }
@@ -139,6 +142,8 @@ fun AppRoot(activity: ComponentActivity) {
                 shizuku = PowerMenu.available()
                 shizukuAsk = PowerMenu.needsPermission()
                 suppressed = Settings.powerMenuSuppressed(activity)
+                alertNote = Settings.alertNote(activity)
+                fullScreen = canUseFullScreen(activity)
                 tileNote = Settings.tileNote(activity)
             }
         }
@@ -325,6 +330,89 @@ fun AppRoot(activity: ComponentActivity) {
                 }
 
                 Spacer(Modifier.height(20.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(28.dp))
+
+                SectionLabel("When the alert fires")
+                Text(
+                    // Named exactly as the phone names them, because a permission
+                    // the person cannot find is a permission that stays off. Both are
+                    // required and they are separate entries: one lets the window be
+                    // created at all, the other lets it sit over the keyguard. Found the
+                    // hard way, after a restart set one back to Deny - the alarm still
+                    // sounded and the screen simply never appeared.
+                    "This app needs two permissions under Other permissions, and it " +
+                        "needs both: \u201cOpen new windows while running in the " +
+                        "background\u201d and \u201cShow on Lock screen\u201d. Without " +
+                        "either one the alert screen cannot open over the lock screen - " +
+                        "the alarm still sounds, so it half looks like it is working.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    "Restarting the phone can turn them off again. Worth checking " +
+                        "both after a reboot.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(8.dp))
+                FilledTonalButton(onClick = { openPermissions(activity) }) {
+                    Text("Open other permissions")
+                }
+                Spacer(Modifier.height(16.dp))
+                Text(
+                    if (fullScreen) {
+                        "Full-screen alerts are allowed."
+                    } else {
+                        "Full-screen alerts are not allowed, so the screen cannot open " +
+                            "itself over the lock screen. The alarm still sounds."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (fullScreen) {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    } else {
+                        MaterialTheme.colorScheme.error
+                    },
+                )
+                if (!fullScreen && Build.VERSION.SDK_INT >= 34) {
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(onClick = {
+                        runCatching {
+                            activity.startActivity(
+                                Intent(
+                                    AndroidSettings.ACTION_MANAGE_APP_USE_FULL_SCREEN_INTENT,
+                                    android.net.Uri.parse("package:" + activity.packageName),
+                                )
+                            )
+                        }
+                    }) { Text("Allow full-screen alerts") }
+                }
+
+                alertNote?.let { note ->
+                    Spacer(Modifier.height(16.dp))
+                    Text(
+                        "The last alert, step by step",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(note, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        // Said outright, because the absence of a line is the finding and
+                        // an absence is easy to read straight past.
+                        "If the last line is not the alert screen opening, the " +
+                            "screen never appeared, and one of the two permissions " +
+                            "above is almost always why.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(onClick = { openPermissions(activity) }) {
+                        Text("Open other permissions")
+                    }
+                }
+
+                Spacer(Modifier.height(28.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(28.dp))
 
@@ -721,4 +809,45 @@ private fun SectionLabel(text: String) {
         color = MaterialTheme.colorScheme.primary,
     )
     Spacer(Modifier.height(6.dp))
+}
+
+/**
+ * Whether this app may put a full-screen alert up.
+ *
+ * A real permission with a real answer from 34 onward, and one a fresh install of an app
+ * targeting 34 or above does not get by default. Below 34 the route is always open.
+ */
+private fun canUseFullScreen(activity: ComponentActivity): Boolean =
+    if (Build.VERSION.SDK_INT >= 34) {
+        runCatching {
+            activity.getSystemService(android.app.NotificationManager::class.java)
+                .canUseFullScreenIntent()
+        }.getOrDefault(true)
+    } else {
+        true
+    }
+
+/**
+ * Open the vendor's own permission editor, where the window permission lives.
+ *
+ * It is not a standard Android permission and has no standard screen, so this goes
+ * straight at the vendor activity and falls back to the ordinary app page elsewhere.
+ */
+private fun openPermissions(activity: ComponentActivity) {
+    val vendor = Intent("miui.intent.action.APP_PERM_EDITOR")
+        .setClassName(
+            "com.miui.securitycenter",
+            "com.miui.permcenter.permissions.PermissionsEditorActivity",
+        )
+        .putExtra("extra_pkgname", activity.packageName)
+    runCatching { activity.startActivity(vendor) }.onFailure {
+        runCatching {
+            activity.startActivity(
+                Intent(
+                    AndroidSettings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                    android.net.Uri.parse("package:" + activity.packageName),
+                )
+            )
+        }
+    }
 }
