@@ -8,6 +8,7 @@ import android.os.Handler
 import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.ui.MainActivity
@@ -63,7 +64,29 @@ class WatchTileService : TileService() {
         }
 
         val running = WatchService.isRunning
-        if (running) WatchService.stop(this) else WatchService.start(this)
+        val started = runCatching {
+            if (running) WatchService.stop(this) else WatchService.start(this)
+        }.onFailure {
+            // A tile is bound by SystemUI, not backed by an activity, so on Android 12
+            // and above the platform can refuse a foreground service started from here.
+            // Uncaught, that takes the process down and the tap simply appears to do
+            // nothing at all — which is exactly how it was reported.
+            CrashLog.record(
+                this,
+                "The tile could not ${if (running) "stop" else "start"} the watch",
+                it,
+            )
+        }.isSuccess
+
+        if (!started) {
+            // Do not record an intent that did not happen, and do not leave the tile
+            // claiming a state the service never reached. Opening the app puts the
+            // recorded reason in front of the person instead of failing in silence.
+            refresh()
+            openApp()
+            return
+        }
+
         // The recorded intent, which is what the boot receiver reads. The service being
         // killed later is not the person changing their mind.
         Settings.setArmed(this, !running)

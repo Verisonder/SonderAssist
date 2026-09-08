@@ -34,6 +34,21 @@ object CrashLog {
         }
     }
 
+    /**
+     * Record something that was caught rather than fatal.
+     *
+     * A tap that silently does nothing is the hardest thing to report and the hardest
+     * thing to diagnose from a description. The phone already knows why it failed; this
+     * is how it says so.
+     */
+    fun record(context: Context, what: String, error: Throwable) {
+        runCatching {
+            val stack = StringWriter().also { error.printStackTrace(PrintWriter(it)) }
+            val at = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US).format(Date())
+            file(context).writeText("$at — $what\n\n$stack")
+        }
+    }
+
     fun read(context: Context): String? {
         val file = file(context)
         return if (file.exists()) file.readText() else null
