@@ -211,14 +211,15 @@ fun AppRoot(activity: ComponentActivity) {
                         .forSensitivity(sensitivity)
                 }
                 Text(
-                    "The pull has to start suddenly — a jerk of %,.0f, or %,.0f if the "
+                    "The pull has to start suddenly — an acceleration of %,.0f, or %,.0f "
                         .format(tuned.axialJerk, tuned.axialJerkWithRotation) +
-                        "phone twists as it goes.",
+                        "if the phone twists as it goes.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
-                    // Jerk alone is not enough: it is a rate of change, and flicking the
-                    // edge of a still phone produces a large one while moving nothing.
+                    // That figure alone is not enough: it is a rate of change, and
+                    // flicking the edge of a still phone produces a large one while
+                    // moving nothing.
                     "And the phone has to actually move with it — at least %.1f m/s² "
                         .format(tuned.minAxialAccel) +
                         "toward the top edge, not just a knock.",

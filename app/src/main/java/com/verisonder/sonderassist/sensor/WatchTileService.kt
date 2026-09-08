@@ -4,6 +4,8 @@ import android.app.PendingIntent
 import android.content.ComponentName
 import android.content.Intent
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
 import com.verisonder.sonderassist.Settings
@@ -23,6 +25,11 @@ import com.verisonder.sonderassist.ui.MainActivity
  */
 class WatchTileService : TileService() {
 
+    private val handler = Handler(Looper.getMainLooper())
+
+    /** A single re-read after a tap, in case the service never arrives. */
+    private val verify = Runnable { refresh() }
+
     /**
      * Android only delivers this while the panel is open, so the tile is refreshed here
      * rather than kept in step continuously. It also means the tile can never show a
@@ -31,6 +38,13 @@ class WatchTileService : TileService() {
     override fun onStartListening() {
         super.onStartListening()
         refresh()
+    }
+
+    override fun onStopListening() {
+        super.onStopListening()
+        // Nobody is looking at the tile any more, and the panel closing is not a reason
+        // to keep a callback alive against a service that may be gone.
+        handler.removeCallbacks(verify)
     }
 
     override fun onTileAdded() {
@@ -53,14 +67,32 @@ class WatchTileService : TileService() {
         // The recorded intent, which is what the boot receiver reads. The service being
         // killed later is not the person changing their mind.
         Settings.setArmed(this, !running)
-        refresh()
+
+        // Neither the start nor the stop has happened yet. startForegroundService and
+        // stopService both queue the work for the main looper, so WatchService.isRunning
+        // still holds the old value on this line — reading it here painted the state the
+        // tile was just tapped out of, and it stayed wrong until the service came up and
+        // asked for a refresh. Paint what was asked for; the service corrects it from
+        // onCreate or onDestroy if reality disagrees.
+        refresh(pending = !running)
+
+        // And if the service never arrives — refused, or killed on startup — nothing
+        // else will put the tile right while the panel stays open. One check, then done.
+        handler.removeCallbacks(verify)
+        handler.postDelayed(verify, VERIFY_DELAY_MS)
     }
 
-    private fun refresh() {
+    /**
+     * @param pending the state that has been asked for but has not taken effect yet.
+     *   Null means read the service, which is the truth everywhere except the moment
+     *   immediately after a tap.
+     */
+    private fun refresh(pending: Boolean? = null) {
         val tile = qsTile ?: return
+        val watching = pending ?: WatchService.isRunning
         tile.state = when {
             !DeviceAdminLocker.isReady(this) -> Tile.STATE_UNAVAILABLE
-            WatchService.isRunning -> Tile.STATE_ACTIVE
+            watching -> Tile.STATE_ACTIVE
             else -> Tile.STATE_INACTIVE
         }
         // Subtitles arrived in 29 and this app runs from 28. On 28 the tile carries its
@@ -96,6 +128,12 @@ class WatchTileService : TileService() {
     }
 
     companion object {
+        /**
+         * Long enough for a foreground service to reach onCreate on a slow device, short
+         * enough that the panel is probably still open.
+         */
+        private const val VERIFY_DELAY_MS = 1_200L
+
         /**
          * Ask Android to call onStartListening, so a change made inside the app is
          * reflected on the tile rather than the two disagreeing until the panel is

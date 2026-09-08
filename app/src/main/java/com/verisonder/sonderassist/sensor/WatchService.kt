@@ -159,7 +159,7 @@ class WatchService : Service(), SensorEventListener {
                     is SnatchDetector.Verdict.Idle -> "not in a hand"
                     is SnatchDetector.Verdict.Watching -> "watching"
                     is SnatchDetector.Verdict.Candidate ->
-                        "possible grab (jerk %.0f)".format(verdict.axialJerk)
+                        "possible grab (acceleration %.0f)".format(verdict.axialJerk)
                     is SnatchDetector.Verdict.Rejected -> "rejected: ${verdict.reason}"
                     is SnatchDetector.Verdict.Snatch -> "locked"
                 }
