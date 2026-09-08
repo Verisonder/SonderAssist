@@ -145,6 +145,17 @@ class WatchTileService : TileService() {
             }
         }
         tile.updateTile()
+
+        // Written on every paint, and overwritten by a tap. So if the note still reads
+        // "painted" after tapping, the tap never reached this class - which is what an
+        // unavailable tile does: SystemUI does not deliver clicks to one at all.
+        note(
+            "painted " + when (tile.state) {
+                Tile.STATE_UNAVAILABLE -> "unavailable, so taps are ignored"
+                Tile.STATE_ACTIVE -> "active"
+                else -> "inactive"
+            }
+        )
     }
 
     private fun openApp() {
