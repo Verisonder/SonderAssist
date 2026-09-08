@@ -335,20 +335,23 @@ fun AppRoot(activity: ComponentActivity) {
 
                 SectionLabel("When the alert fires")
                 Text(
-                    // Named exactly as the phone names it, because a permission the
-                    // person cannot find is a permission that stays off. This one was
-                    // found the hard way: it had been reset to Deny by a restart, the
-                    // alarm still sounded, and the screen simply never appeared.
-                    "This app needs \u201cOpen new windows while running in the " +
-                        "background\u201d, under Other permissions. Without it the alert " +
-                        "screen cannot open over the lock screen - the alarm still " +
-                        "sounds, so it half looks like it is working.",
+                    // Named exactly as the phone names them, because a permission
+                    // the person cannot find is a permission that stays off. Both are
+                    // required and they are separate entries: one lets the window be
+                    // created at all, the other lets it sit over the keyguard. Found the
+                    // hard way, after a restart set one back to Deny - the alarm still
+                    // sounded and the screen simply never appeared.
+                    "This app needs two permissions under Other permissions, and it " +
+                        "needs both: \u201cOpen new windows while running in the " +
+                        "background\u201d and \u201cShow on Lock screen\u201d. Without " +
+                        "either one the alert screen cannot open over the lock screen - " +
+                        "the alarm still sounds, so it half looks like it is working.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Restarting the phone can turn it off again. Worth checking after " +
-                        "a reboot.",
+                    "Restarting the phone can turn them off again. Worth checking " +
+                        "both after a reboot.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -398,8 +401,8 @@ fun AppRoot(activity: ComponentActivity) {
                         // Said outright, because the absence of a line is the finding and
                         // an absence is easy to read straight past.
                         "If the last line is not the alert screen opening, the " +
-                            "screen never appeared, and the permission below is almost " +
-                            "always why.",
+                            "screen never appeared, and one of the two permissions " +
+                            "above is almost always why.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
