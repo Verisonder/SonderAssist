@@ -20,7 +20,7 @@ import kotlin.math.sin
  * The screen has nothing on it - no name, no button, nothing to read. What it
  * has instead is an answer for a touch: a set of turning rings that arrive where
  * the finger is and leave when it does. Two fingers tapped once arm it, two
- * fingers up carry it to the second stage, and two fingers left to right finish
+ * fingers up carry it to the second stage, and one finger left to right finishes
  * it. Each leg has its own origin, taken where the fingers are when that leg
  * begins.
  *
@@ -189,9 +189,9 @@ class HudView @JvmOverloads constructor(
                     val up = touch.startY - touch.y
                     if (up > dp(SWIPE_DP) && abs(touch.x - touch.startX) < up) swiping++
 
-                    // The same test turned on its side, and left to right only:
-                    // a swipe that goes either way is half a gesture, and the
-                    // one that matters here has a direction.
+                    // The same test turned on its side, and left to right
+                    // only: a swipe that goes either way is half a gesture, and
+                    // the one that matters here has a direction.
                     val across = touch.x - touch.startX
                     if (across > dp(SWIPE_DP) && abs(touch.y - touch.startY) < across) crossing++
                 }
@@ -218,7 +218,11 @@ class HudView @JvmOverloads constructor(
                     drift = 0f
                 }
 
-                if (wasStaged && !fired && crossing >= 2) {
+                // One finger, not two. The count is a guard against a gesture
+                // being made by accident, and by this point two deliberate legs
+                // have already been made - the third is not what an accident
+                // reaches on its own.
+                if (wasStaged && !fired && crossing >= 1) {
                     fired = true
                     stagedAt = 0L
                     launch = true

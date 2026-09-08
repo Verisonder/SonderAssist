@@ -328,10 +328,10 @@ fun AppRoot(activity: ComponentActivity) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            "A blank screen and its own sound, played once. Two " +
-                                "fingers tapped once, then two fingers up, then two " +
-                                "fingers left to right, clears the screen and stops " +
-                                "the sound.",
+                            "Your message on a dark screen, and its own sound, " +
+                                "played once. Two fingers tapped once, then two " +
+                                "fingers up, then one finger left to right, clears " +
+                                "the screen and stops the sound.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
