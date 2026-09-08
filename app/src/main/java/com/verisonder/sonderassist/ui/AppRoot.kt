@@ -552,7 +552,18 @@ fun AppRoot(activity: ComponentActivity) {
                         TextButton(onClick = {
                             Settings.setTelegramToken(activity, tgToken)
                             Settings.setTelegramChat(activity, tgChat)
+                            // Read back, so the field shows the id that was kept rather
+                            // than the link it was pulled out of.
+                            tgChat = Settings.telegramChat(activity)
                         }) { Text("Save Telegram") }
+
+                        Text(
+                            "Paste the id, the web.telegram.org link, or a markdown link " +
+                                "- the number is taken out of it. A public channel's @name " +
+                                "works too.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
                         Spacer(Modifier.height(12.dp))
                         Text(

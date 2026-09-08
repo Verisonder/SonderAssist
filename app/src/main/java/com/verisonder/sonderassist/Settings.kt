@@ -219,8 +219,26 @@ object Settings {
 
     fun telegramChat(context: Context): String = of(context).getString(TG_CHAT, "").orEmpty()
 
+    /**
+     * Take the id out of whatever was pasted.
+     *
+     * A chat id is copied from Telegram in several shapes - the bare number, the web URL it
+     * sits at the end of, or a markdown link carrying both. The API wants only the number,
+     * and a URL sent as a chat id fails with an error nobody would connect to a stray
+     * bracket. So it is pulled out here, once, rather than being something to remember.
+     *
+     * A leading @ is left alone: Telegram accepts a public channel's name in place of an id,
+     * and that is a deliberate choice rather than a mistake to correct.
+     */
     fun setTelegramChat(context: Context, value: String) {
-        of(context).edit().putString(TG_CHAT, value.trim()).apply()
+        val text = value.trim()
+        val id = when {
+            text.startsWith("@") -> text.takeWhile { !it.isWhitespace() }
+            // Long enough not to match a stray digit in a hostname, and the minus sign
+            // matters: group ids carry it and the API rejects the number without it.
+            else -> Regex("-?\\d{5,}").find(text)?.value ?: text
+        }
+        of(context).edit().putString(TG_CHAT, id).apply()
     }
 
     /**
