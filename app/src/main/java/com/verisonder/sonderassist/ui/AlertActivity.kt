@@ -268,12 +268,12 @@ class AlertActivity : ComponentActivity() {
         handler.removeCallbacks(goDark)
         runCatching { setTurnScreenOn(true) }
 
-        if (wentDark && !isFinishing) {
+        if (wentDark) {
             wentDark = false
-            // The screen is back, so the alarm comes back with it. Asked of the service,
-            // which owns the sound.
-            Settings.noteAlert(this, "the screen came back, sounding again")
-            WatchService.resound(this)
+            // The sound is not asked for here any more. The service raises the alert and
+            // the alarm together whenever the screen comes back, which covers this screen
+            // being covered, backgrounded, or destroyed and rebuilt.
+            Settings.noteAlert(this, "the screen came back")
         }
     }
 
@@ -333,6 +333,30 @@ class AlertActivity : ComponentActivity() {
 
         handler.removeCallbacks(goDark)
         handler.postDelayed(goDark, GO_DARK_DELAY_MS)
+    }
+
+    /**
+     * Navigated away from, rather than covered.
+     *
+     * The home gesture sends this whole task to the background and no app can block it.
+     * Nothing is hidden and the display is still on, so there is nothing to darken for -
+     * the alert just goes back in front.
+     *
+     * Skipped when the guard has deliberately gone dark, where putting it back would
+     * wake the display it just put out, and when this screen is closing on purpose.
+     */
+    override fun onStop() {
+        super.onStop()
+        if (isFinishing || wentDark) return
+
+        // onPause ran first and will have armed the guard, which silences the alarm a
+        // second later. This is not something covering the screen, so nothing should go
+        // quiet: the darkening is called off here rather than left to be cancelled by the
+        // alert coming back, which is a race it can lose.
+        handler.removeCallbacks(goDark)
+
+        Settings.noteAlert(this, "navigated away from, going back in front")
+        WatchService.reassert(this)
     }
 
     /** Back does not dismiss this. Only unlocking does. */
