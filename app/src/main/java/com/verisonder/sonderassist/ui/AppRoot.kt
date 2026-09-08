@@ -46,6 +46,7 @@ import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.Keepalive
 import com.verisonder.sonderassist.security.PowerMenu
+import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.sensor.WatchService
 
 /**
@@ -561,6 +562,22 @@ fun AppRoot(activity: ComponentActivity) {
                             "Paste the id, the web.telegram.org link, or a markdown link " +
                                 "- the number is taken out of it. A public channel's @name " +
                                 "works too.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        FilledTonalButton(onClick = {
+                            Reporter.test(activity)
+                            // The checks are quick but not instant, so the answer lands in
+                            // the trail below rather than in a dialog that would have to
+                            // wait for the network.
+                            reportNote = Settings.reportNote(activity)
+                        }) { Text("Check all of this") }
+                        Text(
+                            "Sends a real message to the group and reads back every " +
+                                "permission. The result appears below - reopen this screen " +
+                                "if the Telegram lines have not arrived yet.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

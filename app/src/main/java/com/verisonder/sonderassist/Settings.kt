@@ -270,10 +270,14 @@ object Settings {
 
     fun reportNote(context: Context): String? = of(context).getString(REPORT_NOTE, null)
 
-    fun noteReport(context: Context, what: String) {
+    fun noteReport(context: Context, what: String, fresh: Boolean = false) {
         val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
             .format(java.util.Date())
-        val kept = reportNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        val kept = if (fresh) {
+            emptyList()
+        } else {
+            reportNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        }
         of(context).edit()
             .putString(REPORT_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
             .commit()

@@ -96,7 +96,94 @@ object Reporter {
         if (sent < Settings.reportCount(context)) {
             schedule(context, Settings.reportIntervalSeconds(context))
         } else {
+            // Told to stop rather than left to expire. A live pin that has stopped moving
+            // but still shows a countdown reads as a phone being tracked, and it is not.
+            val id = liveMessageId
+            if (id != null) {
+                network.execute {
+                    call(
+                        Settings.telegramToken(context),
+                        "stopMessageLiveLocation",
+                        "chat_id=${enc(Settings.telegramChat(context))}&message_id=$id",
+                    )
+                }
+            }
             Settings.noteReport(context, "done, $sent sent")
+        }
+    }
+
+    /**
+     * Check everything before it matters.
+     *
+     * Every part of this can only fail at the worst possible moment, and by then nobody is
+     * watching. So each piece is asked directly: the token against getMe, the chat id by
+     * sending a real message to it, and the two permissions by reading them.
+     */
+    fun test(context: Context) {
+        val app = context.applicationContext
+        Settings.noteReport(app, "checking", fresh = true)
+
+        val sms = ContextCompat.checkSelfPermission(app, Manifest.permission.SEND_SMS) ==
+            PackageManager.PERMISSION_GRANTED
+        val where = ContextCompat.checkSelfPermission(
+            app,
+            Manifest.permission.ACCESS_FINE_LOCATION,
+        ) == PackageManager.PERMISSION_GRANTED
+
+        Settings.noteReport(
+            app,
+            when {
+                Settings.smsNumber(app).isBlank() -> "no number, so no text will be sent"
+                !sms -> "a number is set, but sending messages is not allowed"
+                else -> "the number and permission are in place"
+            },
+        )
+        Settings.noteReport(
+            app,
+            if (where) {
+                "location is allowed - check it is allowed all the time"
+            } else {
+                "location is not allowed, so there is nothing to send"
+            },
+        )
+        if (lastKnown(app) == null) {
+            Settings.noteReport(app, "the phone has no position stored yet")
+        }
+
+        network.execute {
+            val token = Settings.telegramToken(app)
+            if (token.isBlank()) {
+                Settings.noteReport(app, "no bot token")
+                return@execute
+            }
+            val me = call(token, "getMe", "")
+            if (me == null) {
+                Settings.noteReport(app, "the bot token was rejected")
+                return@execute
+            }
+            val name = runCatching {
+                JSONObject(me).getJSONObject("result").optString("username")
+            }.getOrNull().orEmpty()
+
+            val chat = Settings.telegramChat(app)
+            if (chat.isBlank()) {
+                Settings.noteReport(app, "bot @$name works, but no chat id")
+                return@execute
+            }
+            val ok = call(
+                token,
+                "sendMessage",
+                "chat_id=${enc(chat)}&text=${enc("SonderAssist test - this is where the location would go.")}",
+            )
+            Settings.noteReport(
+                app,
+                if (ok != null) {
+                    "bot @$name reached $chat"
+                } else {
+                    // The usual cause, and the one nobody thinks of.
+                    "the chat id was rejected - is the bot in that group?"
+                },
+            )
         }
     }
 
