@@ -40,6 +40,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.Keepalive
@@ -56,6 +57,8 @@ import com.verisonder.sonderassist.sensor.WatchService
 @Composable
 fun AppRoot(activity: ComponentActivity) {
     var granted by remember { mutableStateOf(DeviceAdminLocker.isReady(activity)) }
+    // Refreshed on resume, so returning from a failed tile tap shows the reason.
+    var crash by remember { mutableStateOf(CrashLog.read(activity)) }
     var hasLock by remember { mutableStateOf(DeviceAdminLocker.hasLockScreen(activity)) }
     // Read from the service, not from a local flag. The old screen kept its own boolean
     // that reset on every recomposition, so it could claim to be off while running.
@@ -122,6 +125,7 @@ fun AppRoot(activity: ComponentActivity) {
                 watching = WatchService.isRunning
                 batteryExempt = Keepalive.isBatteryExempt(activity)
                 canOverlay = AndroidSettings.canDrawOverlays(activity)
+                crash = CrashLog.read(activity)
             }
         }
         owner.lifecycle.addObserver(observer)
@@ -148,6 +152,25 @@ fun AppRoot(activity: ComponentActivity) {
         )
 
         Spacer(Modifier.height(28.dp))
+
+        // Written since the first version and read by nothing, which is the same as not
+        // recording it at all. It only appears when there is something to say.
+        crash?.let { text ->
+            Text("Something failed", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                "The last error the app recorded. Show this when reporting a problem.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(text.take(4000), style = MaterialTheme.typography.bodySmall)
+            TextButton(onClick = {
+                CrashLog.clear(activity)
+                crash = null
+            }) { Text("Clear") }
+            Spacer(Modifier.height(28.dp))
+        }
 
         when {
             !hasLock -> Blocker(
