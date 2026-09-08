@@ -24,6 +24,7 @@ object Settings {
     private const val BACKGROUND_URI = "background_uri"
     private const val JARVIS = "jarvis"
     private const val TILE_NOTE = "tile_note"
+    private const val ALERT_NOTE = "alert_note"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
@@ -141,6 +142,30 @@ object Settings {
     }
 
     /** Whether to close the power menu during a theft. Off until Shizuku is set up. */
+    /**
+     * What happened the last time the alert fired, step by step.
+     *
+     * A blocked background activity start is dropped in silence rather than throwing, so
+     * the code cannot tell whether the screen appeared by asking. The only honest answer
+     * is whether the screen itself says it opened.
+     */
+    fun alertNote(context: Context): String? = of(context).getString(ALERT_NOTE, null)
+
+    fun noteAlert(context: Context, what: String, fresh: Boolean = false) {
+        val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
+        val kept = if (fresh) {
+            emptyList()
+        } else {
+            alertNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        }
+        // commit: this is written while the phone is locking and the process may not
+        // survive long enough to flush it.
+        of(context).edit()
+            .putString(ALERT_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
+            .commit()
+    }
+
     fun blockPowerMenu(context: Context): Boolean =
         of(context).getBoolean(BLOCK_POWER_MENU, false)
 

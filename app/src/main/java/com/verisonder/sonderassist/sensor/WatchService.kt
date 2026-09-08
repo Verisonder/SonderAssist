@@ -11,6 +11,7 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.R
@@ -186,12 +187,22 @@ class WatchService : Service(), SensorEventListener {
         // detector still being fed during the lock would carry the tail of this event
         // into the next session and could fire again the moment the phone is unlocked.
         stopListening()
+        // fresh: each alert starts its own trail, so the last one is never read as part
+        // of this one.
+        Settings.noteAlert(this, "detected a grab", fresh = true)
         DeviceAdminLocker.lockNow(this)
+        Settings.noteAlert(this, "locked the screen")
 
         // After the lock, never before it. Locking is the protection; this only makes it
         // harder to undo, and it must not be able to delay or prevent the thing that
         // actually matters.
-        runCatching { PowerMenu.suppress(this) }
+        val closed = runCatching { PowerMenu.suppress(this) }.getOrDefault(false)
+        if (Settings.blockPowerMenu(this)) {
+            Settings.noteAlert(
+                this,
+                if (closed) "closed the power menu" else "could not close the power menu",
+            )
+        }
 
         // The sound does not depend on the screen appearing. It used to, and on a real
         // theft — where the app is not in the foreground — the screen is exactly what
@@ -246,7 +257,27 @@ class WatchService : Service(), SensorEventListener {
                 .build(),
         )
 
+        // canUseFullScreenIntent is a real question with a real answer from 34 onward,
+        // and this app targets 35. Below that the route is always open.
+        val allowed = if (Build.VERSION.SDK_INT >= 34) {
+            runCatching { manager.canUseFullScreenIntent() }.getOrDefault(true)
+        } else {
+            true
+        }
+        Settings.noteAlert(
+            this,
+            if (allowed) {
+                "posted the full-screen notification"
+            } else {
+                "posted the notification, but full-screen intents are not allowed"
+            },
+        )
+
+        // Not a check of anything. A background activity start that the system refuses is
+        // dropped in silence rather than throwing, so success here proves nothing at all
+        // - only AlertActivity saying it opened does.
         runCatching { startActivity(intent) }
+        Settings.noteAlert(this, "asked for the alert screen")
     }
 
     // ---------------------------------------------------------------- notification

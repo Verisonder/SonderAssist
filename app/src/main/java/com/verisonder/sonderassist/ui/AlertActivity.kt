@@ -74,6 +74,10 @@ class AlertActivity : ComponentActivity() {
      */
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The only statement in the app that proves the screen actually appeared. Every
+        // other step can succeed while this never runs.
+        Settings.noteAlert(this, "the alert screen opened")
+
         setShowWhenLocked(true)
         setTurnScreenOn(true)
 
