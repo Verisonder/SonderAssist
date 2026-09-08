@@ -8,6 +8,9 @@ import android.os.Handler
 import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
@@ -56,9 +59,15 @@ class WatchTileService : TileService() {
     override fun onClick() {
         super.onClick()
 
+        // First line, before any decision. A tap that does nothing and leaves no mark
+        // cannot be told apart from a tap that never reached this class at all, and the
+        // second is the more likely of the two when a panel is not the system's own.
+        note("tapped")
+
         // Nothing to toggle without the permission to lock, so the tap becomes an
         // invitation rather than doing nothing and looking broken.
         if (!DeviceAdminLocker.isReady(this)) {
+            note("no permission to lock, opened the app")
             openApp()
             return
         }
@@ -78,7 +87,10 @@ class WatchTileService : TileService() {
             )
         }.isSuccess
 
+        note(if (running) "asked the service to stop" else "asked the service to start")
+
         if (!started) {
+            note("the service refused")
             // Do not record an intent that did not happen, and do not leave the tile
             // claiming a state the service never reached. Opening the app puts the
             // recorded reason in front of the person instead of failing in silence.
@@ -103,6 +115,11 @@ class WatchTileService : TileService() {
         // else will put the tile right while the panel stays open. One check, then done.
         handler.removeCallbacks(verify)
         handler.postDelayed(verify, VERIFY_DELAY_MS)
+    }
+
+    private fun note(what: String) {
+        val at = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        Settings.setTileNote(this, "$at - $what")
     }
 
     /**
