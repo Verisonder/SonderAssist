@@ -59,6 +59,7 @@ fun AppRoot(activity: ComponentActivity) {
     var granted by remember { mutableStateOf(DeviceAdminLocker.isReady(activity)) }
     // Refreshed on resume, so returning from a failed tile tap shows the reason.
     var crash by remember { mutableStateOf(CrashLog.read(activity)) }
+    var jarvis by remember { mutableStateOf(Settings.jarvis(activity)) }
     var hasLock by remember { mutableStateOf(DeviceAdminLocker.hasLockScreen(activity)) }
     // Read from the service, not from a local flag. The old screen kept its own boolean
     // that reset on every recomposition, so it could claim to be off while running.
@@ -302,6 +303,46 @@ fun AppRoot(activity: ComponentActivity) {
                 HorizontalDivider()
                 Spacer(Modifier.height(28.dp))
 
+                SectionLabel("J.A.R.V.I.S mode")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("J.A.R.V.I.S mode", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "A blank screen and its own sound, played once. Two fingers " +
+                                "tapped once, then two fingers up, clears the screen and " +
+                                "stops the sound.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = jarvis,
+                        onCheckedChange = {
+                            jarvis = it
+                            Settings.setJarvis(activity, it)
+                        },
+                    )
+                }
+                AnimatedVisibility(visible = jarvis) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            // Said plainly rather than left to be discovered: the gesture
+                            // is not a PIN and the phone cannot check who made it.
+                            "Anyone who knows the gesture can clear it without unlocking " +
+                                "the phone. Unlocking still works.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(28.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(28.dp))
+
                 SectionLabel("Sound")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -323,7 +364,19 @@ fun AppRoot(activity: ComponentActivity) {
                     )
                 }
 
-                AnimatedVisibility(visible = alarmOn) {
+                AnimatedVisibility(visible = alarmOn && jarvis) {
+                    Column {
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "J.A.R.V.I.S mode is using its own sound, played once. Turn " +
+                                "the mode off to choose a sound or a repeat count.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                AnimatedVisibility(visible = alarmOn && !jarvis) {
                     Column {
                         Spacer(Modifier.height(16.dp))
                         Text(
@@ -360,6 +413,13 @@ fun AppRoot(activity: ComponentActivity) {
                             modifier = Modifier.fillMaxWidth(),
                         )
 
+                    }
+                }
+
+                // Outside the mode check on purpose. J.A.R.V.I.S mode keeps the grace
+                // period, so hiding the control would leave it applying and unreachable.
+                AnimatedVisibility(visible = alarmOn) {
+                    Column {
                         Spacer(Modifier.height(20.dp))
                         Text("Wait $grace seconds before the sound", style = MaterialTheme.typography.bodyLarge)
                         Text(

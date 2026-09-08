@@ -22,6 +22,7 @@ object Settings {
     private const val ALARM_REPEATS = "alarm_repeats"
     private const val MESSAGE = "message"
     private const val BACKGROUND_URI = "background_uri"
+    private const val JARVIS = "jarvis"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -103,6 +104,23 @@ object Settings {
         of(context).edit().apply {
             if (uri == null) remove(BACKGROUND_URI) else putString(BACKGROUND_URI, uri.toString())
         }.apply()
+    }
+
+    /**
+     * J.A.R.V.I.S mode.
+     *
+     * It takes over the sound outright rather than sitting alongside it: the bundled clip
+     * instead of the chosen one, played once instead of counted. Leaving the sound picker
+     * live while the mode overrides it would show one thing and do another.
+     *
+     * The grace period is deliberately left alone. It is the reason the detector is
+     * allowed to fire on thin evidence, and a mode that skipped it would quietly change
+     * the trade the thresholds were chosen under.
+     */
+    fun jarvis(context: Context): Boolean = of(context).getBoolean(JARVIS, false)
+
+    fun setJarvis(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(JARVIS, value).apply()
     }
 
     fun message(context: Context): String =
