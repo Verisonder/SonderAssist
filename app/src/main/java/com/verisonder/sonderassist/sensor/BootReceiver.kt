@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
+import com.verisonder.sonderassist.security.PowerMenu
 
 /**
  * Starts the watch again after a reboot.
@@ -22,6 +23,12 @@ class BootReceiver : BroadcastReceiver() {
         if (intent.action != Intent.ACTION_BOOT_COMPLETED &&
             intent.action != Intent.ACTION_LOCKED_BOOT_COMPLETED
         ) return
+
+        // First, and before every early return below it. A phone that rebooted while the
+        // power menu was closed has no other way back: the service is gone, the unlock
+        // path never ran, and the person has no idea why the button stopped working.
+        runCatching { PowerMenu.restore(context) }
+
         if (!Settings.armed(context)) return
         // No point starting a watch that cannot lock anything.
         if (!DeviceAdminLocker.isReady(context)) return

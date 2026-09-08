@@ -24,6 +24,10 @@ object Settings {
     private const val BACKGROUND_URI = "background_uri"
     private const val JARVIS = "jarvis"
     private const val TILE_NOTE = "tile_note"
+    private const val BLOCK_POWER_MENU = "block_power_menu"
+    private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
+    private const val SAVED_CHORD = "saved_chord"
+    private const val SAVED_LONG_PRESS = "saved_long_press"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -134,6 +138,47 @@ object Settings {
 
     fun setTileNote(context: Context, value: String) {
         of(context).edit().putString(TILE_NOTE, value).apply()
+    }
+
+    /** Whether to close the power menu during a theft. Off until Shizuku is set up. */
+    fun blockPowerMenu(context: Context): Boolean =
+        of(context).getBoolean(BLOCK_POWER_MENU, false)
+
+    fun setBlockPowerMenu(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(BLOCK_POWER_MENU, value).apply()
+    }
+
+    /**
+     * Whether the power menu is closed right now.
+     *
+     * The most important thing this file holds. It survives the process being killed,
+     * which is the whole reason it is here rather than in memory: a phone left with no
+     * power menu and no record of it is a phone that cannot be put right.
+     */
+    fun powerMenuSuppressed(context: Context): Boolean =
+        of(context).getBoolean(POWER_MENU_SUPPRESSED, false)
+
+    fun setPowerMenuSuppressed(context: Context, value: Boolean) {
+        // commit, not apply: this is written immediately before the screen locks and the
+        // process may not survive to flush it.
+        of(context).edit().putBoolean(POWER_MENU_SUPPRESSED, value).commit()
+    }
+
+    fun savedChord(context: Context): String? = of(context).getString(SAVED_CHORD, null)
+
+    fun savedLongPress(context: Context): String? =
+        of(context).getString(SAVED_LONG_PRESS, null)
+
+    /** What the two keys held before anything was written. Null means it was not set. */
+    fun setSavedPowerMenu(context: Context, chord: String?, longPress: String?) {
+        of(context).edit().apply {
+            if (chord == null) remove(SAVED_CHORD) else putString(SAVED_CHORD, chord)
+            if (longPress == null) {
+                remove(SAVED_LONG_PRESS)
+            } else {
+                putString(SAVED_LONG_PRESS, longPress)
+            }
+        }.commit()
     }
 
     fun message(context: Context): String =
