@@ -34,6 +34,7 @@ object Settings {
     private const val REPORT_INTERVAL = "report_interval"
     private const val REPORT_COUNT = "report_count"
     private const val REPORT_NOTE = "report_note"
+    private const val REPORT_RUNNING = "report_running"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
@@ -261,11 +262,30 @@ object Settings {
         of(context).edit().putInt(REPORT_INTERVAL, value.coerceIn(30, 1800)).apply()
     }
 
+    /**
+     * How many text messages to send.
+     *
+     * Only the texts are counted. Moving the Telegram pin costs nothing and carries on
+     * until it is stopped, but every message is a real one to a real number.
+     */
     fun reportCount(context: Context): Int =
         of(context).getInt(REPORT_COUNT, DEFAULT_REPORT_COUNT).coerceIn(1, 30)
 
     fun setReportCount(context: Context, value: Int) {
         of(context).edit().putInt(REPORT_COUNT, value.coerceIn(1, 30)).apply()
+    }
+
+    /**
+     * Whether a report is in progress.
+     *
+     * Kept on disk rather than in memory so the screen can offer to stop it even if the
+     * app was closed and reopened while it ran.
+     */
+    fun reportRunning(context: Context): Boolean =
+        of(context).getBoolean(REPORT_RUNNING, false)
+
+    fun setReportRunning(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(REPORT_RUNNING, value).commit()
     }
 
     fun reportNote(context: Context): String? = of(context).getString(REPORT_NOTE, null)

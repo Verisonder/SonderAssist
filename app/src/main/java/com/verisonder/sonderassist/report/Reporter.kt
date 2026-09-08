@@ -58,7 +58,32 @@ object Reporter {
         cancel()
         sent = 0
         liveMessageId = null
+        Settings.setReportRunning(app, true)
         schedule(app, Settings.reportDelaySeconds(app))
+    }
+
+    /**
+     * Stop, and take the pin down with it.
+     *
+     * Reached from unlocking and from the button on the screen. On a phone that has been
+     * taken the button is out of reach, so unlocking is the one that matters; the button is
+     * for afterwards, when it is back.
+     */
+    @Synchronized
+    fun stop(context: Context) {
+        val app = context.applicationContext
+        cancel()
+        Settings.setReportRunning(app, false)
+        val id = liveMessageId ?: return
+        liveMessageId = null
+        network.execute {
+            call(
+                Settings.telegramToken(app),
+                "stopMessageLiveLocation",
+                "chat_id=${enc(Settings.telegramChat(app))}&message_id=$id",
+            )
+            Settings.noteReport(app, "stopped")
+        }
     }
 
     /**
@@ -88,27 +113,17 @@ object Reporter {
         if (location == null) {
             Settings.noteReport(context, "no position yet")
         } else {
-            send(context, location)
+            // The two channels part company here. Moving the pin costs nothing, so it keeps
+            // going until it is stopped. Every text is a real message to a real number, so
+            // those are counted.
+            if (sent <= Settings.reportCount(context)) sendSms(context, textFor(location))
+            network.execute { sendTelegram(context, location, textFor(location)) }
         }
 
-        // Repeats are worth having - a single fix taken indoors can be a long way out - but
-        // each SMS is a real message with a real cost, so they are counted rather than endless.
-        if (sent < Settings.reportCount(context)) {
+        if (Settings.reportRunning(context)) {
             schedule(context, Settings.reportIntervalSeconds(context))
         } else {
-            // Told to stop rather than left to expire. A live pin that has stopped moving
-            // but still shows a countdown reads as a phone being tracked, and it is not.
-            val id = liveMessageId
-            if (id != null) {
-                network.execute {
-                    call(
-                        Settings.telegramToken(context),
-                        "stopMessageLiveLocation",
-                        "chat_id=${enc(Settings.telegramChat(context))}&message_id=$id",
-                    )
-                }
-            }
-            Settings.noteReport(context, "done, $sent sent")
+            Settings.noteReport(context, "stopped after $sent")
         }
     }
 
@@ -211,13 +226,10 @@ object Reporter {
         }.getOrNull()
     }
 
-    private fun send(context: Context, where: Location) {
+    private fun textFor(where: Location): String {
         val link = "https://maps.google.com/?q=${where.latitude},${where.longitude}"
-        val text = "SonderAssist: this phone was taken. ${where.latitude}, " +
+        return "SonderAssist: this phone was taken. ${where.latitude}, " +
             "${where.longitude} (±${where.accuracy.toInt()}m) $link"
-
-        sendSms(context, text)
-        network.execute { sendTelegram(context, where, text) }
     }
 
     @SuppressLint("MissingPermission")
@@ -268,8 +280,9 @@ object Reporter {
             return
         }
 
-        val period = (Settings.reportIntervalSeconds(context) * Settings.reportCount(context))
-            .coerceIn(60, 86_400)
+        // The longest Telegram allows. The pin is meant to keep moving until it is
+        // stopped, so tying its life to a message count would have it expire mid-run.
+        val period = 86_400
         val body = call(
             token,
             "sendLocation",

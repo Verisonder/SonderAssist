@@ -64,8 +64,9 @@ class WatchService : Service(), SensorEventListener {
                     // The person is back. Whatever was closed comes open again, and
                     // this is the path that runs in the ordinary case.
                     runCatching { PowerMenu.restore(context ?: this@WatchService) }
-                    // The owner is holding it. Nothing more goes out.
-                    runCatching { Reporter.cancel() }
+                    // The owner is holding it. Nothing more goes out, and the pin is
+                    // taken down rather than left counting.
+                    runCatching { Reporter.stop(context ?: this@WatchService) }
                     startListening()
                 }
 
