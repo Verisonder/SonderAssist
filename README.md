@@ -6,6 +6,15 @@
 [![Licence](https://img.shields.io/badge/licence-GPL--3.0--only-blue)](LICENSE)
 ![Android 9+](https://img.shields.io/badge/Android-9%2B-brightgreen)
 
+<p align="center">
+  <img src="docs/screenshots/home.png" width="270" alt="The app: a watching switch and the sensitivity slider" />
+  <img src="docs/screenshots/alert.png" width="270" alt="The alert screen over the keyguard" />
+</p>
+
+<p align="center">
+  <sub>The switch, and what a thief sees.</sub>
+</p>
+
 ---
 
 ## Why this exists
