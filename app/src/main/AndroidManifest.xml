@@ -157,15 +157,24 @@
         </receiver>
 
         <!--
-            The screen shown over the keyguard after a lock. excludeFromRecents and
-            noHistory so it cannot be found again by someone paging through recents, and
-            singleTask so a second detection reuses the one already showing.
+            The screen shown over the keyguard after a lock. excludeFromRecents so it
+            cannot be found again by someone paging through recents, and singleTask so a
+            second detection reuses the one already showing.
+
+            noHistory was here too, and it was wrong twice over. It finishes an activity
+            the moment it stops being visible, so swiping up from the bottom - the home
+            gesture, which no app can block - did not merely navigate away from the alert,
+            it destroyed it, leaving an ordinary lock screen behind. It also contradicted
+            the guard, which relies on this screen staying alive behind a dark display so
+            that waking the phone brings it back.
+
+            Recents was the only reason it was added, and excludeFromRecents already
+            covers that.
         -->
         <activity
             android:name=".ui.AlertActivity"
             android:exported="false"
             android:excludeFromRecents="true"
-            android:noHistory="true"
             android:launchMode="singleTask"
             android:showOnLockScreen="true"
             android:theme="@style/Theme.SonderAssist" />
