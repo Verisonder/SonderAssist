@@ -210,6 +210,10 @@ fun AppRoot(activity: ComponentActivity) {
                 Text("Settings", style = MaterialTheme.typography.headlineMedium)
             }
         } else {
+            // The home screen carries three things and was sitting hard against the status
+            // bar with the rest of the screen empty below it. Pushed down so it reads as a
+            // block on the screen rather than a list that ran out.
+            Spacer(Modifier.height(64.dp))
             Text("SonderAssist", style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(4.dp))
             Text(
@@ -278,18 +282,6 @@ fun AppRoot(activity: ComponentActivity) {
                     Text(
                         "Right now: $readout",
                         style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
-
-                // Shown whether or not the watch is running: the question this answers
-                // is whether the tile did anything at all, and a tile that did nothing
-                // leaves the watch exactly as it was.
-                tileNote?.let {
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        "Tile: $it",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
@@ -991,6 +983,17 @@ fun AppRoot(activity: ComponentActivity) {
                 // can only be granted back through a system dialog. Stopping the watch is
                 // an everyday action; giving up the permission is a once-ever one, and
                 // they should not look alike or live next to each other.
+                // A diagnostic, not a status. It answers whether the tile did anything
+                // at all, which is worth having and is not worth the top of the home
+                // screen.
+                tileNote?.let {
+                    SectionLabel("The tile")
+                    Text(it, style = MaterialTheme.typography.bodySmall)
+                    Spacer(Modifier.height(28.dp))
+                    HorizontalDivider()
+                    Spacer(Modifier.height(20.dp))
+                }
+
                 Text(
                     "Uninstalling",
                     style = MaterialTheme.typography.titleSmall,
