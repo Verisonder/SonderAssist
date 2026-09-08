@@ -78,7 +78,14 @@ class WatchService : Service(), SensorEventListener {
                 // again: the home gesture sends this task to the background, so there is
                 // nothing left to resume on its own and the keyguard is all that shows.
                 Intent.ACTION_SCREEN_ON -> {
-                    if (Settings.alertLive(this@WatchService)) showAlert()
+                    if (Settings.alertLive(this@WatchService)) {
+                        showAlert()
+                        // And the sound, from here rather than from the screen. The screen
+                        // that knew it had gone quiet is gone - this is a fresh one - so
+                        // asking it to remember would be asking the wrong thing. The
+                        // service owns the alarm and is the only part that survives.
+                        Alarm.scheduleAfterGrace(this@WatchService)
+                    }
                 }
 
                 // The alert screen asks; the service acts. Structural rule: the sound

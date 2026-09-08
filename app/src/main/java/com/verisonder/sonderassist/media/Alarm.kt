@@ -40,6 +40,11 @@ object Alarm {
         val app = context.applicationContext
         appContext = app
         cancelPending()
+        // Anything already playing is released first. This is now reached on every return
+        // of the alert screen, and without it a second player would be built over the
+        // first and both would sound.
+        player?.runCatching { stop(); release() }
+        player = null
         val task = Runnable { start(app) }
         pending = task
         // The wait is the whole design: the screen locks at once, the noise does not, so

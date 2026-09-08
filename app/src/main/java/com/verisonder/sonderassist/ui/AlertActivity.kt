@@ -268,12 +268,12 @@ class AlertActivity : ComponentActivity() {
         handler.removeCallbacks(goDark)
         runCatching { setTurnScreenOn(true) }
 
-        if (wentDark && !isFinishing) {
+        if (wentDark) {
             wentDark = false
-            // The screen is back, so the alarm comes back with it. Asked of the service,
-            // which owns the sound.
-            Settings.noteAlert(this, "the screen came back, sounding again")
-            WatchService.resound(this)
+            // The sound is not asked for here any more. The service raises the alert and
+            // the alarm together whenever the screen comes back, which covers this screen
+            // being covered, backgrounded, or destroyed and rebuilt.
+            Settings.noteAlert(this, "the screen came back")
         }
     }
 
