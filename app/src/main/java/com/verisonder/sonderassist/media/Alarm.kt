@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import com.verisonder.sonderassist.R
+import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
 
 /**
@@ -109,6 +110,10 @@ object Alarm {
                 prepare()
                 start()
             }
+        }.onFailure {
+            // Silence and no trace was the old behaviour, and silence is indistinguishable
+            // from the sound being switched off. Recorded so the phone can say which.
+            CrashLog.record(context, "The alarm could not play $uri", it)
         }.getOrNull()
     }
 

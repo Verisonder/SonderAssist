@@ -322,6 +322,13 @@ fun AppRoot(activity: ComponentActivity) {
                         onCheckedChange = {
                             jarvis = it
                             Settings.setJarvis(activity, it)
+                            // The mode promises a sound, and the sound is gated on the
+                            // switch below. Turning the mode on without this left it
+                            // describing something that could not happen.
+                            if (it && !alarmOn) {
+                                alarmOn = true
+                                Settings.setAlarmEnabled(activity, true)
+                            }
                         },
                     )
                 }
