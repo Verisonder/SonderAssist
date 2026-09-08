@@ -21,6 +21,7 @@ import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.PowerMenu
+import com.verisonder.sonderassist.report.Reporter
 
 /**
  * Watches the motion sensors while the phone is unlocked and in use.
@@ -63,6 +64,8 @@ class WatchService : Service(), SensorEventListener {
                     // The person is back. Whatever was closed comes open again, and
                     // this is the path that runs in the ordinary case.
                     runCatching { PowerMenu.restore(context ?: this@WatchService) }
+                    // The owner is holding it. Nothing more goes out.
+                    runCatching { Reporter.cancel() }
                     startListening()
                 }
 
@@ -201,6 +204,10 @@ class WatchService : Service(), SensorEventListener {
         // After the lock, never before it. Locking is the protection; this only makes it
         // harder to undo, and it must not be able to delay or prevent the thing that
         // actually matters.
+        // Started at the lock, not after it. The countdown to the first report is the whole
+        // design: it has to run out before the phone can be switched off.
+        runCatching { Reporter.start(this) }
+
         val closed = runCatching { PowerMenu.suppress(this) }.getOrDefault(false)
         if (Settings.blockPowerMenu(this)) {
             Settings.noteAlert(

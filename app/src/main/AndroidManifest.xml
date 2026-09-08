@@ -2,15 +2,34 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <!--
-        No INTERNET permission. Motion data describes where the phone has been and how it
-        is carried, which is as personal as anything this app could hold, and the simplest
-        way to promise it goes nowhere is to make it impossible.
+        This app held no INTERNET permission for its first two versions, on the grounds
+        that motion data describes where the phone has been and how it is carried, and the
+        simplest way to promise it goes nowhere is to make it impossible.
+
+        Reporting a stolen phone's position to a Telegram group needs the network, so that
+        promise no longer holds and this comment says so rather than being left as a lie.
+        What is narrower is the traffic: nothing is sent unless the location report is
+        switched on, and the only thing ever sent is a position after a theft. Motion data
+        still goes nowhere.
     -->
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- The second channel, and the one that survives a data outage. -->
+    <uses-permission android:name="android.permission.SEND_SMS" />
+
+    <!--
+        Background location needs "Allow all the time", granted by hand. Without it the
+        position is only readable while the app is in front, which is never the case during
+        a theft.
+    -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
     <!-- The watch has to survive the screen going on and off and the app not being in
          front, which on Android means a foreground service with a visible notification. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!--
@@ -108,7 +127,7 @@
         <service
             android:name=".sensor.WatchService"
             android:exported="false"
-            android:foregroundServiceType="specialUse">
+            android:foregroundServiceType="specialUse|location">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Detects the phone being taken from the user's hand and locks the screen." />

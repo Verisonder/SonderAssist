@@ -66,6 +66,16 @@ fun AppRoot(activity: ComponentActivity) {
     var alertNote by remember { mutableStateOf(Settings.alertNote(activity)) }
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
     var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
+    var report by remember { mutableStateOf(Settings.reportEnabled(activity)) }
+    var smsNumber by remember { mutableStateOf(Settings.smsNumber(activity)) }
+    var tgToken by remember { mutableStateOf(Settings.telegramToken(activity)) }
+    var tgChat by remember { mutableStateOf(Settings.telegramChat(activity)) }
+    var reportDelay by remember { mutableIntStateOf(Settings.reportDelaySeconds(activity)) }
+    var reportCount by remember { mutableIntStateOf(Settings.reportCount(activity)) }
+    var reportNote by remember { mutableStateOf(Settings.reportNote(activity)) }
+    val askReportPermissions = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
     var shizuku by remember { mutableStateOf(PowerMenu.available()) }
     var shizukuAsk by remember { mutableStateOf(PowerMenu.needsPermission()) }
     var suppressed by remember { mutableStateOf(Settings.powerMenuSuppressed(activity)) }
@@ -144,6 +154,7 @@ fun AppRoot(activity: ComponentActivity) {
                 shizukuAsk = PowerMenu.needsPermission()
                 suppressed = Settings.powerMenuSuppressed(activity)
                 alertNote = Settings.alertNote(activity)
+                reportNote = Settings.reportNote(activity)
                 fullScreen = canUseFullScreen(activity)
                 tileNote = Settings.tileNote(activity)
             }
@@ -437,6 +448,134 @@ fun AppRoot(activity: ComponentActivity) {
                     Spacer(Modifier.height(8.dp))
                     FilledTonalButton(onClick = { openPermissions(activity) }) {
                         Text("Open other permissions")
+                    }
+                }
+
+                Spacer(Modifier.height(28.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(28.dp))
+
+                SectionLabel("Send the location")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("After a theft", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "If the phone is not unlocked in time, its position goes out " +
+                                "by text message and as a live pin in a Telegram group.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = report,
+                        onCheckedChange = {
+                            report = it
+                            Settings.setReportEnabled(activity, it)
+                            if (it) {
+                                askReportPermissions.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.SEND_SMS,
+                                        android.Manifest.permission.ACCESS_FINE_LOCATION,
+                                    )
+                                )
+                            }
+                        },
+                    )
+                }
+
+                AnimatedVisibility(visible = report) {
+                    Column {
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            // The reason the delay is short, said where the slider is.
+                            "Holding the power button for about ten seconds switches the " +
+                                "phone off, and nothing in software can stop that. " +
+                                "Whatever is sent has to be sent before then, so this " +
+                                "wait is deliberately short.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+                        Text(
+                            "Wait $reportDelay seconds, then send $reportCount times",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Slider(
+                            value = reportDelay.toFloat(),
+                            onValueChange = { reportDelay = it.toInt() },
+                            onValueChangeFinished = {
+                                Settings.setReportDelaySeconds(activity, reportDelay)
+                            },
+                            valueRange = 15f..300f,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Slider(
+                            value = reportCount.toFloat(),
+                            onValueChange = { reportCount = it.toInt().coerceAtLeast(1) },
+                            onValueChangeFinished = {
+                                Settings.setReportCount(activity, reportCount)
+                            },
+                            valueRange = 1f..15f,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+
+                        Spacer(Modifier.height(16.dp))
+                        OutlinedTextField(
+                            value = smsNumber,
+                            onValueChange = { smsNumber = it.take(24) },
+                            label = { Text("Phone number for the text") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        TextButton(onClick = { Settings.setSmsNumber(activity, smsNumber) }) {
+                            Text("Save number")
+                        }
+
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = tgToken,
+                            onValueChange = { tgToken = it.take(80) },
+                            label = { Text("Telegram bot token") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        OutlinedTextField(
+                            value = tgChat,
+                            onValueChange = { tgChat = it.take(40) },
+                            label = { Text("Telegram chat id") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        TextButton(onClick = {
+                            Settings.setTelegramToken(activity, tgToken)
+                            Settings.setTelegramChat(activity, tgChat)
+                        }) { Text("Save Telegram") }
+
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Location must be allowed all the time, not only while the " +
+                                "app is open - a theft is never while the app is open. " +
+                                "Grant it in the app's permissions.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        FilledTonalButton(onClick = { openPermissions(activity) }) {
+                            Text("Open permissions")
+                        }
+
+                        reportNote?.let { note ->
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "The last report, step by step",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(note, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
 
