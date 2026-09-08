@@ -5,8 +5,10 @@ import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import com.verisonder.sonderassist.R
 import com.verisonder.sonderassist.Settings
 
 /**
@@ -67,9 +69,17 @@ object Alarm {
             )
         }
 
-        val uri = Settings.alarmUri(context)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-        val repeats = Settings.alarmRepeats(context)
+        val jarvis = Settings.jarvis(context)
+        // The mode owns the sound completely. Honouring the picked sound or the repeat
+        // count here would leave the settings screen describing something the phone does
+        // not do.
+        val uri = if (jarvis) {
+            Uri.parse("android.resource://${context.packageName}/${R.raw.jarvis_neutralize}")
+        } else {
+            Settings.alarmUri(context)
+                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        }
+        val repeats = if (jarvis) 1 else Settings.alarmRepeats(context)
         var played = 0
 
         player = runCatching {
