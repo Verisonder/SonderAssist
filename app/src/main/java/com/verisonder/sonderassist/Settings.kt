@@ -23,6 +23,7 @@ object Settings {
     private const val MESSAGE = "message"
     private const val BACKGROUND_URI = "background_uri"
     private const val JARVIS = "jarvis"
+    private const val TILE_NOTE = "tile_note"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -121,6 +122,18 @@ object Settings {
 
     fun setJarvis(context: Context, value: Boolean) {
         of(context).edit().putBoolean(JARVIS, value).apply()
+    }
+
+    /**
+     * The last thing the quick settings tile did, for the line on the main screen.
+     *
+     * A tap that does nothing and records nothing cannot be told apart from a tap that
+     * never arrived. This is what tells them apart.
+     */
+    fun tileNote(context: Context): String? = of(context).getString(TILE_NOTE, null)
+
+    fun setTileNote(context: Context, value: String) {
+        of(context).edit().putString(TILE_NOTE, value).apply()
     }
 
     fun message(context: Context): String =

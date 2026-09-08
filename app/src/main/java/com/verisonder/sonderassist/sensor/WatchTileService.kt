@@ -8,6 +8,9 @@ import android.os.Handler
 import android.os.Looper
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
@@ -56,9 +59,15 @@ class WatchTileService : TileService() {
     override fun onClick() {
         super.onClick()
 
+        // First line, before any decision. A tap that does nothing and leaves no mark
+        // cannot be told apart from a tap that never reached this class at all, and the
+        // second is the more likely of the two when a panel is not the system's own.
+        note("tapped")
+
         // Nothing to toggle without the permission to lock, so the tap becomes an
         // invitation rather than doing nothing and looking broken.
         if (!DeviceAdminLocker.isReady(this)) {
+            note("no permission to lock, opened the app")
             openApp()
             return
         }
@@ -78,7 +87,10 @@ class WatchTileService : TileService() {
             )
         }.isSuccess
 
+        note(if (running) "asked the service to stop" else "asked the service to start")
+
         if (!started) {
+            note("the service refused")
             // Do not record an intent that did not happen, and do not leave the tile
             // claiming a state the service never reached. Opening the app puts the
             // recorded reason in front of the person instead of failing in silence.
@@ -105,6 +117,11 @@ class WatchTileService : TileService() {
         handler.postDelayed(verify, VERIFY_DELAY_MS)
     }
 
+    private fun note(what: String) {
+        val at = SimpleDateFormat("HH:mm:ss", Locale.US).format(Date())
+        Settings.setTileNote(this, "$at - $what")
+    }
+
     /**
      * @param pending the state that has been asked for but has not taken effect yet.
      *   Null means read the service, which is the truth everywhere except the moment
@@ -128,6 +145,17 @@ class WatchTileService : TileService() {
             }
         }
         tile.updateTile()
+
+        // Written on every paint, and overwritten by a tap. So if the note still reads
+        // "painted" after tapping, the tap never reached this class - which is what an
+        // unavailable tile does: SystemUI does not deliver clicks to one at all.
+        note(
+            "painted " + when (tile.state) {
+                Tile.STATE_UNAVAILABLE -> "unavailable, so taps are ignored"
+                Tile.STATE_ACTIVE -> "active"
+                else -> "inactive"
+            }
+        )
     }
 
     private fun openApp() {

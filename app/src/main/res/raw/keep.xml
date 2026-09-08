@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    The release build has isShrinkResources on, and the shrinker took the alarm clip out
+    of version 1.6 entirely. The id stayed in resources.arsc, so the URI still built and
+    still pointed somewhere - it pointed at nothing, and MediaPlayer threw
+    "Prepare failed.: status=0x1" with no other clue.
+
+    The reference is a plain R.raw in Kotlin and should have been enough. It was not, and
+    a resource the app cannot run without is not something to leave to inference.
+
+    Measured rather than assumed: unzip the released APK and look for res/raw. If the mp3
+    is missing, this file is not doing its job.
+-->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@raw/jarvis_neutralize" />

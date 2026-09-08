@@ -60,6 +60,7 @@ fun AppRoot(activity: ComponentActivity) {
     // Refreshed on resume, so returning from a failed tile tap shows the reason.
     var crash by remember { mutableStateOf(CrashLog.read(activity)) }
     var jarvis by remember { mutableStateOf(Settings.jarvis(activity)) }
+    var tileNote by remember { mutableStateOf(Settings.tileNote(activity)) }
     var hasLock by remember { mutableStateOf(DeviceAdminLocker.hasLockScreen(activity)) }
     // Read from the service, not from a local flag. The old screen kept its own boolean
     // that reset on every recomposition, so it could claim to be off while running.
@@ -127,6 +128,7 @@ fun AppRoot(activity: ComponentActivity) {
                 batteryExempt = Keepalive.isBatteryExempt(activity)
                 canOverlay = AndroidSettings.canDrawOverlays(activity)
                 crash = CrashLog.read(activity)
+                tileNote = Settings.tileNote(activity)
             }
         }
         owner.lifecycle.addObserver(observer)
@@ -208,6 +210,18 @@ fun AppRoot(activity: ComponentActivity) {
                     Text(
                         "Right now: $readout",
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+
+                // Shown whether or not the watch is running: the question this answers
+                // is whether the tile did anything at all, and a tile that did nothing
+                // leaves the watch exactly as it was.
+                tileNote?.let {
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "Tile: $it",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 
