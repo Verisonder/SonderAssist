@@ -44,6 +44,7 @@ import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.Keepalive
+import com.verisonder.sonderassist.security.PowerMenu
 import com.verisonder.sonderassist.sensor.WatchService
 
 /**
@@ -60,6 +61,10 @@ fun AppRoot(activity: ComponentActivity) {
     // Refreshed on resume, so returning from a failed tile tap shows the reason.
     var crash by remember { mutableStateOf(CrashLog.read(activity)) }
     var jarvis by remember { mutableStateOf(Settings.jarvis(activity)) }
+    var blockPower by remember { mutableStateOf(Settings.blockPowerMenu(activity)) }
+    var shizuku by remember { mutableStateOf(PowerMenu.available()) }
+    var shizukuAsk by remember { mutableStateOf(PowerMenu.needsPermission()) }
+    var suppressed by remember { mutableStateOf(Settings.powerMenuSuppressed(activity)) }
     var tileNote by remember { mutableStateOf(Settings.tileNote(activity)) }
     var hasLock by remember { mutableStateOf(DeviceAdminLocker.hasLockScreen(activity)) }
     // Read from the service, not from a local flag. The old screen kept its own boolean
@@ -127,7 +132,13 @@ fun AppRoot(activity: ComponentActivity) {
                 watching = WatchService.isRunning
                 batteryExempt = Keepalive.isBatteryExempt(activity)
                 canOverlay = AndroidSettings.canDrawOverlays(activity)
+                // The third and last guard. If the service was killed while the power
+                // menu was closed, opening the app is the person's own way back.
+                runCatching { PowerMenu.restore(activity) }
                 crash = CrashLog.read(activity)
+                shizuku = PowerMenu.available()
+                shizukuAsk = PowerMenu.needsPermission()
+                suppressed = Settings.powerMenuSuppressed(activity)
                 tileNote = Settings.tileNote(activity)
             }
         }
@@ -314,6 +325,76 @@ fun AppRoot(activity: ComponentActivity) {
                 }
 
                 Spacer(Modifier.height(20.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(28.dp))
+
+                SectionLabel("The power menu")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Close it during a theft", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Power and volume up, and holding power, stop opening the " +
+                                "menu once the phone has locked itself. Unlocking puts " +
+                                "them back.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = blockPower,
+                        onCheckedChange = {
+                            blockPower = it
+                            Settings.setBlockPowerMenu(activity, it)
+                            if (!it) runCatching { PowerMenu.restore(activity) }
+                        },
+                    )
+                }
+                AnimatedVisibility(visible = blockPower) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            // Said plainly. This is the one feature here that depends on
+                            // something outside the app, and a protection that has
+                            // quietly stopped is worse than one that is honestly off.
+                            if (shizuku) {
+                                "Shizuku is running. Note that it has to be started " +
+                                    "again after every reboot, and this does nothing " +
+                                    "while it is not."
+                            } else {
+                                "Shizuku is not running, so this will not happen. Start " +
+                                    "it and grant SonderAssist, then come back."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (shizukuAsk) {
+                            Spacer(Modifier.height(8.dp))
+                            FilledTonalButton(onClick = { PowerMenu.requestPermission() }) {
+                                Text("Grant Shizuku access")
+                            }
+                        }
+                        if (suppressed) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "The power menu is closed right now. Unlocking, " +
+                                    "restarting the phone, or opening this app all put " +
+                                    "it back.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Holding power for about ten seconds still restarts the " +
+                                "phone. That is below Android and nothing can stop it.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(28.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(28.dp))
 

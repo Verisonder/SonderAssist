@@ -19,6 +19,7 @@ import com.verisonder.sonderassist.detect.Sample
 import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
+import com.verisonder.sonderassist.security.PowerMenu
 
 /**
  * Watches the motion sensors while the phone is unlocked and in use.
@@ -58,6 +59,9 @@ class WatchService : Service(), SensorEventListener {
                     Alarm.stop()
                     getSystemService(NotificationManager::class.java)
                         .cancel(ALERT_NOTIFICATION_ID)
+                    // The person is back. Whatever was closed comes open again, and
+                    // this is the path that runs in the ordinary case.
+                    runCatching { PowerMenu.restore(context ?: this@WatchService) }
                     startListening()
                 }
 
@@ -183,6 +187,11 @@ class WatchService : Service(), SensorEventListener {
         // into the next session and could fire again the moment the phone is unlocked.
         stopListening()
         DeviceAdminLocker.lockNow(this)
+
+        // After the lock, never before it. Locking is the protection; this only makes it
+        // harder to undo, and it must not be able to delay or prevent the thing that
+        // actually matters.
+        runCatching { PowerMenu.suppress(this) }
 
         // The sound does not depend on the screen appearing. It used to, and on a real
         // theft — where the app is not in the foreground — the screen is exactly what

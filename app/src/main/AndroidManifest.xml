@@ -21,6 +21,12 @@
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!--
+        Shizuku. Closing the power menu means writing two global settings, and that needs
+        shell UID, which no ordinary app has. Not required for anything else: without it
+        the screen still locks and the alarm still sounds.
+    -->
+    <uses-permission android:name="moe.shizuku.manager.permission.API_V23" />
+    <!--
         A full-screen intent is the sanctioned way to put a screen up from the background;
         a plain startActivity is silently dropped on Android 10 and above.
     -->
@@ -81,6 +87,18 @@
                 android:name="android.service.quicksettings.TOGGLEABLE_TILE"
                 android:value="true" />
         </service>
+
+        <!--
+            What the Shizuku app binds to. It has to be exported for that, and it is
+            guarded by a permission only the system holds.
+        -->
+        <provider
+            android:name="rikka.shizuku.ShizukuProvider"
+            android:authorities="${applicationId}.shizuku"
+            android:multiprocess="false"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.INTERACT_ACROSS_USERS_FULL" />
 
         <!--
             specialUse rather than a stock type: none of the defined foreground service
