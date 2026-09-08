@@ -1022,7 +1022,9 @@ fun AppRoot(activity: ComponentActivity) {
                 .padding(20.dp),
         ) {
             Icon(
-                if (onSettings) Icons.Filled.Close else SettingsIcon,
+                // The alias renames the member, so it is still reached through the
+                // receiver: Icons.Filled.SettingsIcon, not a bare SettingsIcon.
+                if (onSettings) Icons.Filled.Close else Icons.Filled.SettingsIcon,
                 contentDescription = if (onSettings) "Close settings" else "Settings",
             )
         }
