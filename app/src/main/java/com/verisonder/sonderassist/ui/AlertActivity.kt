@@ -348,6 +348,13 @@ class AlertActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         if (isFinishing || wentDark) return
+
+        // onPause ran first and will have armed the guard, which silences the alarm a
+        // second later. This is not something covering the screen, so nothing should go
+        // quiet: the darkening is called off here rather than left to be cancelled by the
+        // alert coming back, which is a race it can lose.
+        handler.removeCallbacks(goDark)
+
         Settings.noteAlert(this, "navigated away from, going back in front")
         WatchService.reassert(this)
     }
