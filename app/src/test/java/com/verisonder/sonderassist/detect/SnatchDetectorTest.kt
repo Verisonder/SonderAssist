@@ -171,6 +171,24 @@ class SnatchDetectorTest {
     }
 
     @Test
+    fun `the slider range sits where it was moved to`() {
+        // 1 is the old middle and the middle is the old 0. If either moves, the phones
+        // already set up change behaviour without anyone touching them.
+        val top = SnatchDetector.Tuning.forSensitivity(1f)
+        assertEquals(600f, top.axialJerk, 0.01f)
+        assertEquals(365f, top.axialJerkWithRotation, 0.01f)
+        assertEquals(6.25f, top.minAxialAccel, 0.01f)
+        val middle = SnatchDetector.Tuning.forSensitivity(0.5f)
+        assertEquals(900f, middle.axialJerk, 0.01f)
+        assertEquals(550f, middle.axialJerkWithRotation, 0.01f)
+        assertEquals(9f, middle.minAxialAccel, 0.01f)
+        val bottom = SnatchDetector.Tuning.forSensitivity(0f)
+        assertEquals(1200f, bottom.axialJerk, 0.01f)
+        assertEquals(735f, bottom.axialJerkWithRotation, 0.01f)
+        assertEquals(11.75f, bottom.minAxialAccel, 0.01f)
+    }
+
+    @Test
     fun `a trace round trips`() {
         val original = Trace.Recording("grab from hand", held(0, 300, Random(9)))
         val back = Trace.parse(Trace.serialise(original))
