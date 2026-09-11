@@ -106,10 +106,15 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
              *
              * The three numbers that decide whether a grab fires move together, because
              * they describe one physical event from three angles and moving one alone
-             * just makes the detector incoherent. The endpoints are deliberately wide:
-             * at 0 it should take a genuine yank, at 1 it should be twitchy enough to be
-             * annoying. Nobody can tell what the middle should be without traces, which
-             * is what the slider is for in the meantime.
+             * just makes the detector incoherent.
+             *
+             * **The range was moved down after use on a real phone.** The old eager
+             * half fired on ordinary handling far too often, so it was dropped: the old
+             * middle is now 1, the old 0 is now the middle, and the cautious half extends
+             * the same line past it. Each step of the slider still moves the thresholds by
+             * the same amount as before; only the window onto that line moved. Nobody can
+             * tell where the middle should be without traces, which is what the slider is
+             * for in the meantime.
              *
              * @param sensitivity 0 is the most cautious, 1 the most eager.
              */
@@ -117,9 +122,9 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
                 val s = sensitivity.coerceIn(0f, 1f)
                 fun between(cautious: Float, eager: Float) = cautious + (eager - cautious) * s
                 return Tuning(
-                    axialJerk = between(900f, 300f),
-                    axialJerkWithRotation = between(550f, 180f),
-                    minAxialAccel = between(9f, 3.5f),
+                    axialJerk = between(1200f, 600f),
+                    axialJerkWithRotation = between(735f, 365f),
+                    minAxialAccel = between(11.75f, 6.25f),
                 )
             }
         }
