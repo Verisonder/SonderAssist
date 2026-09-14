@@ -471,10 +471,17 @@ class WatchService : Service(), SensorEventListener {
         private const val PROXIMITY_NEAR_CM = 5f
 
         /**
-         * Three short knocks and one long one. Deliberately not a pattern any
+         * Two short knocks and a long one, twice over. Deliberately not a pattern any
          * notification uses, so it is recognisable through a coat without looking.
+         *
+         * The 350 between the two halves is doing real work: it is long enough to read as
+         * a gap rather than as one of the 90 ms beats inside a half, so the thing is heard
+         * as a phrase said twice instead of six knocks in a row. Saying it twice is what
+         * makes it survive being half-missed — the first half is often felt only after it
+         * has already started.
          */
-        private val ALERT_PATTERN = longArrayOf(0, 120, 90, 120, 90, 450)
+        private val ALERT_PATTERN =
+            longArrayOf(0, 120, 90, 120, 90, 450, 350, 120, 90, 120, 90, 450)
 
         /**
          * Whether the service is actually alive, as opposed to whether the person asked
