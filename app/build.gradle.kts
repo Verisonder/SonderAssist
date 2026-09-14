@@ -14,8 +14,8 @@ android {
         // the entire point of the app. Below that there is nothing to ship.
         minSdk = 28
         targetSdk = 35
-        versionCode = 31
-        versionName = "5.2"
+        versionCode = 32
+        versionName = "5.3"
     }
 
     signingConfigs {
