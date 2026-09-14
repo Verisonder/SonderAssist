@@ -497,7 +497,8 @@ fun AppRoot(activity: ComponentActivity) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Buzz when it fires", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Three short and one long, the moment the screen locks. It " +
+                            "Two short and one long, twice over, the moment the screen " +
+                                "locks. It " +
                                 "goes out as an alarm, so it still arrives on a phone " +
                                 "kept silent or on Do Not Disturb — and it arrives before " +
                                 "the alarm sound does.",
