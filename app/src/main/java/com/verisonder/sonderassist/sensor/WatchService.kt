@@ -187,7 +187,6 @@ class WatchService : Service(), SensorEventListener {
         covered = false
         detector = SnatchDetector(
             SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this))
-                .copy(rejectWhenCovered = Settings.pocketGuard(this))
         )
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
