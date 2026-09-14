@@ -37,6 +37,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -72,6 +74,32 @@ import com.verisonder.sonderassist.sensor.WatchService
  * once it can actually run — offering a sensitivity slider to someone who has not granted
  * permission yet is asking them to tune something that is switched off.
  */
+/**
+ * The devices already paired with the phone, as address to name.
+ *
+ * Paired, not nearby: nothing is scanned. Scanning needs location permission and a user
+ * who wonders why a theft app wants it, and the device this is for is one that is already
+ * paired by definition. Empty when the permission has not been granted, which is also
+ * what it looks like before the switch is first turned on.
+ */
+private fun pairedDevices(context: android.content.Context): List<Pair<String, String>> {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+        androidx.core.content.ContextCompat.checkSelfPermission(
+            context, android.Manifest.permission.BLUETOOTH_CONNECT
+        ) != android.content.pm.PackageManager.PERMISSION_GRANTED
+    ) {
+        return emptyList()
+    }
+    return runCatching {
+        context.getSystemService(android.bluetooth.BluetoothManager::class.java)
+            ?.adapter
+            ?.bondedDevices
+            ?.map { it.address to (it.name ?: it.address) }
+            ?.sortedBy { it.second }
+            .orEmpty()
+    }.getOrDefault(emptyList())
+}
+
 @Composable
 fun AppRoot(activity: ComponentActivity) {
     /**
@@ -91,6 +119,13 @@ fun AppRoot(activity: ComponentActivity) {
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
     var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
     var uprightGuard by remember { mutableStateOf(Settings.uprightGuard(activity)) }
+    var tether by remember { mutableStateOf(Settings.tetherEnabled(activity)) }
+    var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
+    var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
+    var paired by remember { mutableStateOf(pairedDevices(activity)) }
+    val askBluetooth = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { paired = pairedDevices(activity) }
     var vibrateOnAlert by remember { mutableStateOf(Settings.vibrateOnAlert(activity)) }
     var report by remember { mutableStateOf(Settings.reportEnabled(activity)) }
     var smsNumber by remember { mutableStateOf(Settings.smsNumber(activity)) }
@@ -486,6 +521,99 @@ fun AppRoot(activity: ComponentActivity) {
                             uprightGuard = it
                             Settings.setUprightGuard(activity, it)
                         },
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Lock if the strap goes away", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Pick a device you wear. If it disconnects and does not come " +
+                                "back, the phone locks — silently. No message, no sound, " +
+                                "and the screen is not woken. The next time you turn the " +
+                                "screen on the alert is waiting, and it has to be " +
+                                "dismissed the same way any other one does. The location " +
+                                "goes out and the power menu is closed exactly as after " +
+                                "a grab.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = tether,
+                        onCheckedChange = {
+                            tether = it
+                            Settings.setTetherEnabled(activity, it)
+                            if (it) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    askBluetooth.launch(
+                                        arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT)
+                                    )
+                                }
+                                paired = pairedDevices(activity)
+                            }
+                        },
+                    )
+                }
+
+                if (tether) {
+                    Spacer(Modifier.height(8.dp))
+                    if (paired.isEmpty()) {
+                        Text(
+                            "No paired devices to show. Pair the watch in the phone's " +
+                                "own Bluetooth settings first, and allow this app to see " +
+                                "nearby devices.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    } else {
+                        Text("Which device", style = MaterialTheme.typography.bodyLarge)
+                        paired.forEach { (address, name) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        Settings.setTether(activity, address, name)
+                                        tetherAddress = address
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = address.equals(tetherAddress, ignoreCase = true),
+                                    onClick = {
+                                        Settings.setTether(activity, address, name)
+                                        tetherAddress = address
+                                    },
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(name, style = MaterialTheme.typography.bodyLarge)
+                                    Text(address, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Wait $tetherGrace seconds before acting",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        "Bluetooth drops for reasons that are not theft and almost all of " +
+                            "them come back within a few seconds. If it reconnects inside " +
+                            "this, nothing happens at all.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Slider(
+                        value = tetherGrace.toFloat(),
+                        onValueChange = { tetherGrace = it.toInt() },
+                        onValueChangeFinished = {
+                            Settings.setTetherGraceSeconds(activity, tetherGrace)
+                        },
+                        valueRange = 5f..300f,
                     )
                 }
 

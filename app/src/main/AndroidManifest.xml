@@ -39,6 +39,16 @@
     -->
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!--
+      The strap. BLUETOOTH_CONNECT is a runtime permission from 31; below that the old
+      normal permission covers the same ground and is capped so it is not requested on
+      versions that replaced it. Nothing is scanned and nothing is paired from here: the
+      app reads the list of devices already paired, and listens for one of them going
+      away.
+    -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!--
         Shizuku. Closing the power menu means writing two global settings, and that needs
         shell UID, which no ordinary app has. Not required for anything else: without it

@@ -37,6 +37,11 @@ object Settings {
     private const val REPORT_NOTE = "report_note"
     private const val REPORT_RUNNING = "report_running"
     private const val ALERT_LIVE = "alert_live"
+    private const val ALERT_QUIET = "alert_quiet"
+    private const val TETHER = "tether"
+    private const val TETHER_ADDRESS = "tether_address"
+    private const val TETHER_NAME = "tether_name"
+    private const val TETHER_GRACE = "tether_grace"
     private const val UPRIGHT_GUARD = "upright_guard"
     private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
@@ -228,6 +233,59 @@ object Settings {
         of(context).edit().putBoolean(VIBRATE_ON_ALERT, value).apply()
     }
 
+    /**
+     * How long a disconnection has to last before it counts as the phone being gone.
+     *
+     * Bluetooth drops for reasons that are not theft — a wrist turned the wrong way, a
+     * doorway, the watch rebooting for its own update. Almost all of them come back
+     * within a few seconds. Without this the feature would lock the phone and start
+     * sending the location several times a day, which is not a smaller failure than
+     * missing a theft: it is the failure that gets the whole thing switched off.
+     */
+    const val DEFAULT_TETHER_GRACE = 30
+
+    /** Lock when a paired device goes away. Off until asked for. */
+    fun tetherEnabled(context: Context): Boolean = of(context).getBoolean(TETHER, false)
+
+    fun setTetherEnabled(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(TETHER, value).apply()
+    }
+
+    /**
+     * The one device that counts, by hardware address.
+     *
+     * One, not any. Headphones, a car and a speaker all disconnect constantly and none of
+     * them is strapped to a wrist, so "something disconnected" is not the signal — "the
+     * thing that is on you disconnected" is. Empty means nothing is chosen and the
+     * feature does nothing however it is switched.
+     */
+    fun tetherAddress(context: Context): String = of(context).getString(TETHER_ADDRESS, "").orEmpty()
+
+    /** Only for showing on the settings screen; the address is what is matched. */
+    fun tetherName(context: Context): String = of(context).getString(TETHER_NAME, "").orEmpty()
+
+    fun setTether(context: Context, address: String, name: String) {
+        of(context).edit().putString(TETHER_ADDRESS, address).putString(TETHER_NAME, name).apply()
+    }
+
+    fun tetherGraceSeconds(context: Context): Int =
+        of(context).getInt(TETHER_GRACE, DEFAULT_TETHER_GRACE)
+
+    fun setTetherGraceSeconds(context: Context, value: Int) {
+        of(context).edit().putInt(TETHER_GRACE, value.coerceIn(5, 300)).apply()
+    }
+
+    /**
+     * Whether the alert now standing is the quiet kind.
+     *
+     * Stored rather than passed, for the same reason [alertLive] is: the screen is
+     * destroyed and rebuilt, the service can be killed and restarted, and every part that
+     * has to stay quiet — the alarm on the next screen-on, the words on the alert — is
+     * reached long after whatever decided it. Cleared wherever [alertLive] is cleared, and
+     * a stale true would silence a real theft.
+     */
+    fun alertQuiet(context: Context): Boolean = of(context).getBoolean(ALERT_QUIET, false)
+
     /** Send the location after a theft. Off until asked for. */
     fun reportEnabled(context: Context): Boolean = of(context).getBoolean(REPORT, false)
 
@@ -335,8 +393,17 @@ object Settings {
      */
     fun alertLive(context: Context): Boolean = of(context).getBoolean(ALERT_LIVE, false)
 
-    fun setAlertLive(context: Context, value: Boolean) {
-        of(context).edit().putBoolean(ALERT_LIVE, value).commit()
+    /**
+     * @param quiet the kind of alert being raised. Written in the same commit as the flag
+     *   it qualifies, so the two can never be read apart — and forced back to false on
+     *   every clear, because a quiet flag left standing from a tether alert would take the
+     *   sound off the next real grab.
+     */
+    fun setAlertLive(context: Context, value: Boolean, quiet: Boolean = false) {
+        of(context).edit()
+            .putBoolean(ALERT_LIVE, value)
+            .putBoolean(ALERT_QUIET, value && quiet)
+            .commit()
     }
 
     /**
