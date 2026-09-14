@@ -229,6 +229,11 @@ fun AppRoot(activity: ComponentActivity) {
                 // after the person has gone and fixed exactly the thing it asked them to.
                 paired = pairedDevices(activity)
                 tetherAddress = Settings.tetherAddress(activity)
+                // **Every time, not only when the switch is touched.** The switch was the
+                // only thing that started the service, so anyone who already had the
+                // strap on before this existed never got one — and the screen said
+                // nothing, because there was nothing to say it with.
+                runCatching { WatchService.sync(activity) }
                 connected = Settings.connectedSet(activity)
                 strapNote = Settings.strapNote(activity)
                 tileNote = Settings.tileNote(activity)
@@ -518,6 +523,23 @@ fun AppRoot(activity: ComponentActivity) {
                     )
 
                     Spacer(Modifier.height(12.dp))
+                    Text(
+                        if (watching) {
+                            "Running. The strap is listening."
+                        } else if (tetherAddress.isEmpty()) {
+                            "Not running — no device chosen yet."
+                        } else {
+                            "Not running. Nothing can reach the strap in this state."
+                        },
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = if (watching) {
+                            MaterialTheme.colorScheme.onSurface
+                        } else {
+                            MaterialTheme.colorScheme.error
+                        },
+                    )
+
+                    Spacer(Modifier.height(12.dp))
                     Text("What the strap has seen", style = MaterialTheme.typography.bodyLarge)
                     Spacer(Modifier.height(4.dp))
                     Text(
@@ -529,10 +551,10 @@ fun AppRoot(activity: ComponentActivity) {
                         // Said outright, because an empty list is the finding and an
                         // absence reads as nothing having happened rather than as an
                         // answer.
-                        "Turn a paired device off and come back. If nothing appears here " +
-                            "at all, the phone is not telling this app about Bluetooth, " +
-                            "and that is why the strap does not fire — not the wait, not " +
-                            "the device you picked.",
+                        "It should say it is listening as soon as this screen is open. " +
+                            "If it does and a device going off still adds nothing, the " +
+                            "phone is not telling this app about Bluetooth — and neither " +
+                            "the wait nor the device you picked was ever the problem.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
