@@ -65,25 +65,34 @@ failure was found by replaying the fixtures. 0.98 gives about half a second.
 | Phone on a table | No tremor — a held phone always carries some |
 | Already being waved about | Tremor above the upper bound, where a grab is indistinguishable |
 
-## The pocket — open, and the hardest thing here
+## The pocket
 
-**Putting the phone into a pocket produces the grab signature, and no threshold separates
-them.** The phone travels down along its own long axis, bottom edge leading, and the
-pocket — or the arm reaching the end of its travel — stops it. A stopped downward motion
-is an upward acceleration: positive, along +Y, sharp, the same shape as a pull out of the
-hand. Because the descent is along the long axis, the whole event lives on the one channel
-the detector watches. A firm push clears any number the slider can reach, and walking off
-afterwards satisfies the confirmation window. The sensitivity range was moved twice and
-the most cautious position still fired.
+**The phone goes in top edge first.** That is the whole thing, and it was misread twice
+before it was measured. With the top edge leading, the phone's +Y axis points at the
+ground for the entire descent — so shoving it down the pocket is a shove toward its own
+top edge, which is the grab signature exactly. Not the arrest at the bottom, as was
+assumed first: the push itself, at full strength, at the start of the motion.
 
-**Proximity was tried in 4.6 and was wrong.** The sensor is at the top of the front face,
-which is precisely where a grabbing hand lands, so "covered" reads true during a real grab
-as readily as inside a pocket. It suppressed thefts. Removed; do not try it again.
+Same axis, same sign, same shape. No threshold on the event can separate them, which is
+why the sensitivity range was moved twice with no effect and why the most cautious
+position still fired.
 
-What is still unused: the descent **precedes** the arrest. A pocket insertion carries a
-sustained negative axial phase for a few hundred milliseconds before the positive spike; a
-phone sitting in a hand does not. That is a discriminator on data already being computed
-and needs no new sensor — but the duration and depth of it are guesses until traces exist.
+**Proximity was tried in 4.6 and was wrong.** The sensor sits at the top of the front
+face, which is precisely where a grabbing hand lands, so "covered" reads true during a
+real theft as readily as inside a pocket. It suppressed thefts. Removed; do not try it
+again.
+
+What separates them is the **attitude of the phone while it happens**. Going into a
+pocket it is upside down. Being taken off you, it is not — nobody is holding a phone
+inverted when it is snatched. So a transient is ignored while the gravity estimate reads
+below `uprightMinGravityY` on Y, which is −4.9: the top edge more than thirty degrees
+below horizontal. A phone held flat in an open palm reads near zero on Y and is untouched.
+
+**Sign, since it is now load-bearing.** The accelerometer reports +9.81 along whichever
+axis points up, so a phone held the right way up reads positive on Y. The fixtures modelled
+rest at −8.5 and called it "gravity along −Y" — the gravity vector, not the reading. It
+changed no verdict, because the detector subtracts the estimate and only the difference
+reaches the gates, but it modelled every fixture as an upside-down phone. Corrected.
 
 ## Thresholds
 

@@ -22,11 +22,23 @@ class SnatchDetectorTest {
     private val hz = 100
     private val stepNs = 1_000_000_000L / hz
 
-    // A phone being looked at is tilted, not flat, so gravity sits mostly along -Y with
-    // some +Z in the device frame. Modelling it flat would make the axial channel read
-    // zero at rest by accident rather than by construction, and hide a sign error.
-    private val restY = -8.5f
+    // A phone being looked at is tilted, not flat, so the reading sits mostly along +Y
+    // with some +Z. Modelling it flat would make the axial channel read zero at rest by
+    // accident rather than by construction, and hide a sign error.
+    //
+    // **The sign was wrong here until the pocket was understood.** It read -8.5, which is
+    // the gravity *vector* in the device frame rather than what the accelerometer
+    // reports: the sensor reads +9.81 along whichever axis points up, so a phone held
+    // the right way up reads positive on Y. It made no difference to any verdict, because
+    // the detector subtracts the estimate and only the difference reaches the gates — but
+    // it modelled every fixture as an upside-down phone, which is the one thing the
+    // detector now has an opinion about.
+    private val restY = 8.5f
     private val restZ = 4.9f
+
+    /** Top edge at the bottom of the pocket: inverted, so the reading on Y is negative. */
+    private val pocketY = -9.0f
+    private val pocketZ = 2.0f
 
     private fun replay(samples: List<Sample>): List<SnatchDetector.Verdict> {
         val detector = SnatchDetector()
@@ -143,6 +155,76 @@ class SnatchDetectorTest {
         }
         val samples = held(0, 1200, random) + axialPull(start) + falling
         assertFalse("a dropped phone is not a stolen phone", fired(replay(samples)))
+    }
+
+    @Test
+    fun `a phone going into a pocket does not fire`() {
+        val random = Random(11)
+        // The phone goes in top edge first, so +Y points at the ground the whole way
+        // down and the shove into the pocket is a shove toward the phone's own top edge.
+        // That is the grab signature, at full strength, and no threshold separates them.
+        val walking = (0 until 120).map { i ->
+            Sample(
+                timestampNs = i * stepNs,
+                ax = (random.nextFloat() - 0.5f) * 1.2f,
+                ay = pocketY + (random.nextFloat() - 0.5f) * 1.2f,
+                az = pocketZ + (random.nextFloat() - 0.5f) * 1.2f,
+                gx = (random.nextFloat() - 0.5f) * 0.4f,
+                gy = (random.nextFloat() - 0.5f) * 0.4f,
+                gz = (random.nextFloat() - 0.5f) * 0.4f,
+            )
+        }
+        val shove = (0 until 4).map { i ->
+            Sample(start + i * stepNs, 0f, pocketY + minOf(20f, 5f + i * 8f), pocketZ, 0.8f, 0.5f, 0.3f)
+        }
+        val after = (0 until 90).map { i ->
+            Sample(
+                timestampNs = start + (4 + i) * stepNs,
+                ax = 1.5f + (random.nextFloat() - 0.5f) * 3f,
+                ay = pocketY + 5f + (random.nextFloat() - 0.5f) * 4f,
+                az = pocketZ + (random.nextFloat() - 0.5f) * 4f,
+                gx = 0.5f, gy = 0.4f, gz = 0.3f,
+            )
+        }
+        assertFalse(fired(replay(walking + shove + after)))
+        // And it is the attitude doing it, not the numbers: the same motion fires with
+        // the gate opened. If this half ever stops firing the fixture has drifted and the
+        // half above proves nothing.
+        val detector = SnatchDetector(SnatchDetector.Tuning(uprightMinGravityY = -100f))
+        assertTrue(fired((walking + shove + after).map { detector.accept(it) }))
+    }
+
+    @Test
+    fun `a grab with the phone flat in an open palm still fires`() {
+        val random = Random(12)
+        // Gravity almost entirely on Z, so Y reads near zero. The gate must leave this
+        // alone - it is a perfectly ordinary way to be holding a phone when it is taken.
+        val flatY = 0.5f
+        val flatZ = 9.7f
+        val resting = (0 until 120).map { i ->
+            Sample(
+                timestampNs = i * stepNs,
+                ax = (random.nextFloat() - 0.5f) * 0.4f,
+                ay = flatY + (random.nextFloat() - 0.5f) * 0.4f,
+                az = flatZ + (random.nextFloat() - 0.5f) * 0.4f,
+                gx = (random.nextFloat() - 0.5f) * 0.15f,
+                gy = (random.nextFloat() - 0.5f) * 0.15f,
+                gz = (random.nextFloat() - 0.5f) * 0.15f,
+            )
+        }
+        val pull = (0 until 4).map { i ->
+            Sample(start + i * stepNs, 0f, flatY + minOf(18f, 4f + i * 7f), flatZ, 0.1f, 0.1f, 0.1f)
+        }
+        val away = (0 until 90).map { i ->
+            Sample(
+                timestampNs = start + (4 + i) * stepNs,
+                ax = 2f + (random.nextFloat() - 0.5f) * 3f,
+                ay = flatY + 6f + (random.nextFloat() - 0.5f) * 4f,
+                az = flatZ + (random.nextFloat() - 0.5f) * 4f,
+                gx = 0.5f, gy = 0.4f, gz = 0.3f,
+            )
+        }
+        assertTrue(fired(replay(resting + pull + away)))
     }
 
     @Test
