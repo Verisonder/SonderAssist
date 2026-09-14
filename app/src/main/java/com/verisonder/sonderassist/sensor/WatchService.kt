@@ -11,8 +11,12 @@ import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
+import android.bluetooth.BluetoothDevice
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -62,6 +66,30 @@ class WatchService : Service(), SensorEventListener {
     // from the last session would blind the detector for the whole of the next one.
     private var covered = false
 
+    private val tetherHandler = Handler(Looper.getMainLooper())
+
+    /**
+     * The countdown from a disconnection to acting on it, held so a reconnection can take
+     * it back. Null when nothing is pending, which is almost always.
+     */
+    private var tetherPending: Runnable? = null
+
+    /**
+     * Keeps the CPU up for the length of the countdown.
+     *
+     * **A posted delay does not wake a sleeping phone.** `Handler.postDelayed` puts a
+     * message on a queue; it does not hold the device awake and it does not set an alarm,
+     * so with the screen off the message waits for something else to wake the CPU. The
+     * grab detector never met this because it only ever runs while the screen is on. The
+     * strap is the opposite case by design — the phone is in a pocket, dark and asleep,
+     * which is exactly when it gets taken — and a thirty-second countdown that lands
+     * whenever the phone next happens to stir is not a countdown.
+     *
+     * Bounded by the grace itself, five minutes at the very most, and released the moment
+     * it is either acted on or taken back.
+     */
+    private var tetherWake: PowerManager.WakeLock? = null
+
     private val screenEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             when (intent?.action) {
@@ -91,6 +119,10 @@ class WatchService : Service(), SensorEventListener {
                 Intent.ACTION_SCREEN_ON -> {
                     if (Settings.alertLive(this@WatchService)) {
                         showAlert(notify = false)
+                        // A quiet alert stays quiet when it finally appears. Without this
+                        // the strap would be silent right up to the moment it mattered
+                        // and then set off the siren in your pocket.
+                        if (Settings.alertQuiet(this@WatchService)) return
                         // And the sound, from here rather than from the screen. The screen
                         // that knew it had gone quiet is gone - this is a fresh one - so
                         // asking it to remember would be asking the wrong thing. The
@@ -119,6 +151,18 @@ class WatchService : Service(), SensorEventListener {
                 ACTION_DISMISS -> {
                     Alarm.stop()
                     Settings.setAlertLive(this@WatchService, false)
+                }
+
+                // The strap. Only the one chosen device counts - headphones and a car
+                // disconnect all day and neither is on a wrist.
+                BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    if (isTethered(intent)) armTether()
+                }
+
+                // It came back inside the grace. That is the doorway and the wrist turned
+                // the wrong way, not a theft.
+                BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                    if (isTethered(intent)) cancelTether(returned = true)
                 }
             }
         }
@@ -153,6 +197,10 @@ class WatchService : Service(), SensorEventListener {
                 addAction(ACTION_STOP_REPORT)
                 addAction(ACTION_DISMISS)
                 addAction(ACTION_REASSERT)
+                // System broadcasts, so a NOT_EXPORTED receiver still gets them - the
+                // same route ACTION_SCREEN_ON and ACTION_USER_PRESENT already take here.
+                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -171,6 +219,7 @@ class WatchService : Service(), SensorEventListener {
         WatchTileService.refreshFrom(this)
         Alarm.stop()
         stopListening()
+        cancelTether(returned = false)
         runCatching { unregisterReceiver(screenEvents) }
         super.onDestroy()
     }
@@ -262,17 +311,97 @@ class WatchService : Service(), SensorEventListener {
         }
     }
 
-    private fun onSnatch() {
+    private fun onSnatch() = fire("detected a grab", quiet = false)
+
+    // ------------------------------------------------------------------- the strap
+
+    /** Whether the device in this broadcast is the one chosen, by address. */
+    private fun isTethered(intent: Intent?): Boolean {
+        if (!Settings.tetherEnabled(this)) return false
+        val chosen = Settings.tetherAddress(this)
+        if (chosen.isEmpty()) return false
+        val device: BluetoothDevice? =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+            }
+        // The address, never the name. A name is whatever the other device says it is
+        // and two of them can say the same thing.
+        return device?.address.equals(chosen, ignoreCase = true)
+    }
+
+    /**
+     * Start the countdown from a disconnection to acting on it.
+     *
+     * Nothing happens at the moment of the drop, on purpose. A drop that comes back is
+     * the overwhelmingly common case and acting on it immediately would lock the phone
+     * and start sending the location several times a day — which does not fail smaller
+     * than missing a theft, it fails in the way that gets the feature switched off.
+     */
+    private fun armTether() {
+        cancelTether(returned = false)
+        // Recorded now rather than when it fires, because the interesting case is the one
+        // that never fires and would otherwise leave no trace at all.
+        Settings.noteAlert(this, "the strap disconnected", fresh = true)
+        val seconds = Settings.tetherGraceSeconds(this)
+        // Acquired before the delay is posted, not after: between the two the phone is
+        // already free to go back to sleep.
+        tetherWake = runCatching {
+            getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SonderAssist:strap")
+                .apply {
+                    setReferenceCounted(false)
+                    // A timeout as well as an explicit release. If anything below throws
+                    // or the service is killed mid-countdown, the phone is not left awake
+                    // with no one holding the other end.
+                    acquire(seconds * 1000L + 5_000L)
+                }
+        }.getOrNull()
+        val task = Runnable {
+            tetherPending = null
+            fire("the strap did not come back", quiet = true)
+            releaseTetherWake()
+        }
+        tetherPending = task
+        tetherHandler.postDelayed(task, seconds * 1000L)
+    }
+
+    private fun releaseTetherWake() {
+        runCatching { tetherWake?.takeIf { it.isHeld }?.release() }
+        tetherWake = null
+    }
+
+    private fun cancelTether(returned: Boolean) {
+        tetherPending?.let {
+            tetherHandler.removeCallbacks(it)
+            if (returned) Settings.noteAlert(this, "the strap came back, standing down")
+        }
+        tetherPending = null
+        releaseTetherWake()
+    }
+
+    /**
+     * Everything that happens once the phone is decided to be gone.
+     *
+     * One path for both reasons it can be decided, because everything after the decision
+     * is the same: the lock, the report, the power menu, the alert that has to be
+     * dismissed. **[quiet] removes three things and nothing else** — the words, the sound,
+     * and waking the screen to show any of it. The rest is deliberately identical, since a
+     * second copy of this sequence is how one of the two ends up missing a fix.
+     */
+    private fun fire(why: String, quiet: Boolean) {
         // Stop listening first. Locking the screen fires ACTION_SCREEN_OFF, and a
         // detector still being fed during the lock would carry the tail of this event
         // into the next session and could fire again the moment the phone is unlocked.
         stopListening()
         // fresh: each alert starts its own trail, so the last one is never read as part
         // of this one.
-        Settings.noteAlert(this, "detected a grab", fresh = true)
+        Settings.noteAlert(this, why, fresh = !quiet)
         DeviceAdminLocker.lockNow(this)
         Settings.noteAlert(this, "locked the screen")
-        Settings.setAlertLive(this, true)
+        Settings.setAlertLive(this, true, quiet = quiet)
 
         // After the lock, like everything else here, and wrapped because a missing or
         // refused vibrator must not be able to stop the rest of the sequence. This is the
@@ -295,6 +424,15 @@ class WatchService : Service(), SensorEventListener {
                 this,
                 if (closed) "closed the power menu" else "could not close the power menu",
             )
+        }
+
+        if (quiet) {
+            // Nothing is shown and nothing sounds. The alert is not skipped, only
+            // withheld: alertLive is set, so the first time the screen comes back on the
+            // ACTION_SCREEN_ON branch above puts it up — which is the whole behaviour
+            // wanted here, and it already existed for the alert being covered.
+            Settings.noteAlert(this, "waiting, silent, for the screen to come back")
+            return
         }
 
         // The sound does not depend on the screen appearing. It used to, and on a real

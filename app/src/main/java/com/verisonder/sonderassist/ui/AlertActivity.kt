@@ -143,7 +143,7 @@ class AlertActivity : ComponentActivity() {
             return
         }
 
-        val message = Settings.message(this)
+        val message = if (Settings.alertQuiet(this)) "" else Settings.message(this)
         // Decoded once, here, rather than in composition: this screen appears at the
         // worst possible moment and must not be waiting on a decode to draw.
         val background = Settings.backgroundUri(this)?.let { uri ->
@@ -235,7 +235,14 @@ class AlertActivity : ComponentActivity() {
         // never drawn behind the words, and above the field so the words are readable
         // over it. No typeface is set: the phone's own is the one to use.
         val words = TextView(this).apply {
-            text = Settings.message(this@AlertActivity)
+            // A quiet alert says nothing. The strap disconnecting is not a claim about
+            // anyone holding the phone, and a message accusing whoever is looking at it
+            // would be wrong most of the times this appears.
+            text = if (Settings.alertQuiet(this@AlertActivity)) {
+                ""
+            } else {
+                Settings.message(this@AlertActivity)
+            }
             setTextColor(android.graphics.Color.WHITE)
             textSize = 24f
             gravity = Gravity.CENTER
