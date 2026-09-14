@@ -37,6 +37,8 @@ object Settings {
     private const val REPORT_NOTE = "report_note"
     private const val REPORT_RUNNING = "report_running"
     private const val ALERT_LIVE = "alert_live"
+    private const val POCKET_GUARD = "pocket_guard"
+    private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
@@ -196,6 +198,35 @@ object Settings {
 
     fun setGuardAlert(context: Context, value: Boolean) {
         of(context).edit().putBoolean(GUARD_ALERT, value).apply()
+    }
+
+    /**
+     * Ignore a transient while the proximity sensor reads near.
+     *
+     * **On by default, which is a deliberate break from the rule that everything optional
+     * starts off.** The others are features; this is a correction. Putting the phone in a
+     * pocket produced the same signature as a grab and fired at every slider position
+     * down to the most cautious, so leaving the fix switched off would ship the bug. The
+     * switch exists to turn it back off, not to turn it on.
+     */
+    fun pocketGuard(context: Context): Boolean = of(context).getBoolean(POCKET_GUARD, true)
+
+    fun setPocketGuard(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(POCKET_GUARD, value).apply()
+    }
+
+    /**
+     * Buzz when the watch fires.
+     *
+     * On by default, and it is the one part of an alert that reaches you when the phone
+     * is already in a pocket and the alarm has not started yet. It is also how a false
+     * lock gets noticed at all rather than being found later.
+     */
+    fun vibrateOnAlert(context: Context): Boolean =
+        of(context).getBoolean(VIBRATE_ON_ALERT, true)
+
+    fun setVibrateOnAlert(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(VIBRATE_ON_ALERT, value).apply()
     }
 
     /** Send the location after a theft. Off until asked for. */

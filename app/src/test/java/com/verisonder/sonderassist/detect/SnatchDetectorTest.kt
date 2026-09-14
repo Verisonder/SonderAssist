@@ -33,6 +33,17 @@ class SnatchDetectorTest {
         return samples.map { detector.accept(it) }
     }
 
+    private fun replay(
+        samples: List<Sample>,
+        tuning: SnatchDetector.Tuning,
+    ): List<SnatchDetector.Verdict> {
+        val detector = SnatchDetector(tuning)
+        return samples.map { detector.accept(it) }
+    }
+
+    /** The same motion, with something against the front of the phone throughout it. */
+    private fun covered(samples: List<Sample>) = samples.map { it.copy(covered = true) }
+
     private fun fired(verdicts: List<SnatchDetector.Verdict>) =
         verdicts.any { it is SnatchDetector.Verdict.Snatch }
 
@@ -143,6 +154,38 @@ class SnatchDetectorTest {
         }
         val samples = held(0, 1200, random) + axialPull(start) + falling
         assertFalse("a dropped phone is not a stolen phone", fired(replay(samples)))
+    }
+
+    @Test
+    fun `the same pull does not fire once the phone is covered`() {
+        val random = Random(11)
+        // Identical to the straight pull above in every way except where the phone is.
+        // Going into a pocket, the pocket stops a downward motion and the arrest reads as
+        // an upward push of the same sign and sharpness as a grab — which is why no
+        // threshold ever separated the two.
+        val samples = held(0, 1200, random) + covered(axialPull(start)) +
+            covered(carriedAway(start + 4 * stepNs, 900, random))
+        assertFalse(fired(replay(samples)))
+    }
+
+    @Test
+    fun `being covered after the grab does not save the phone`() {
+        val random = Random(12)
+        // Only the instant of the transient is judged. A thief who pockets the phone a
+        // moment after taking it is still caught, and this is the line between the two.
+        val samples = held(0, 1200, random) + axialPull(start) +
+            covered(carriedAway(start + 4 * stepNs, 900, random))
+        assertTrue(fired(replay(samples)))
+    }
+
+    @Test
+    fun `the covered guard can be switched off`() {
+        val random = Random(13)
+        val samples = held(0, 1200, random) + covered(axialPull(start)) +
+            covered(carriedAway(start + 4 * stepNs, 900, random))
+        assertTrue(
+            fired(replay(samples, SnatchDetector.Tuning(rejectWhenCovered = false)))
+        )
     }
 
     @Test

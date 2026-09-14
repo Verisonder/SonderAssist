@@ -90,6 +90,8 @@ fun AppRoot(activity: ComponentActivity) {
     var alertNote by remember { mutableStateOf(Settings.alertNote(activity)) }
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
     var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
+    var pocketGuard by remember { mutableStateOf(Settings.pocketGuard(activity)) }
+    var vibrateOnAlert by remember { mutableStateOf(Settings.vibrateOnAlert(activity)) }
     var report by remember { mutableStateOf(Settings.reportEnabled(activity)) }
     var smsNumber by remember { mutableStateOf(Settings.smsNumber(activity)) }
     var tgToken by remember { mutableStateOf(Settings.telegramToken(activity)) }
@@ -454,6 +456,58 @@ fun AppRoot(activity: ComponentActivity) {
                         onCheckedChange = {
                             guardAlert = it
                             Settings.setGuardAlert(activity, it)
+                        },
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Ignore it while the phone is covered",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            "Pushing the phone into a pocket ends with the pocket " +
+                                "stopping it, and a downward motion stopped is an upward " +
+                                "push — the same signal as a grab, at any sensitivity. " +
+                                "This ignores one that happens while something is already " +
+                                "against the screen. Leave it on unless a real grab is " +
+                                "being missed.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = pocketGuard,
+                        onCheckedChange = {
+                            pocketGuard = it
+                            Settings.setPocketGuard(activity, it)
+                        },
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Buzz when it fires", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Three short and one long, the moment the screen locks. It " +
+                                "arrives before the alarm does and through a pocket, so " +
+                                "you know it happened either way.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = vibrateOnAlert,
+                        onCheckedChange = {
+                            vibrateOnAlert = it
+                            Settings.setVibrateOnAlert(activity, it)
                         },
                     )
                 }
