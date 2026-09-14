@@ -148,15 +148,28 @@ class WatchService : Service(), SensorEventListener {
                     Settings.setAlertLive(this@WatchService, false)
                 }
 
-                // Every device is recorded, not only the chosen one, because the record
-                // is what proves these broadcasts arrive at all. Only the chosen one acts.
+
+            }
+        }
+    }
+
+    /**
+     * The Bluetooth events, on their own receiver and **exported**.
+     *
+     * Split out from [screenEvents] because the other one is registered NOT_EXPORTED and
+     * I could not rule that out as the reason nothing arrived. These two actions are
+     * protected broadcasts — only the system is allowed to send them — so exporting the
+     * receiver gives no other app a way in, and it removes one of the two things this
+     * could have been without costing another round trip to find out.
+     */
+    private val bluetoothEvents = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            when (intent?.action) {
                 BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
                     note(intent, connected = false)
                     if (isTethered(intent)) armTether()
                 }
 
-                // It came back inside the grace. That is the doorway and the wrist turned
-                // the wrong way, not a theft.
                 BluetoothDevice.ACTION_ACL_CONNECTED -> {
                     note(intent, connected = true)
                     if (isTethered(intent)) cancelTether(returned = true)
@@ -176,6 +189,20 @@ class WatchService : Service(), SensorEventListener {
         // over from the last time the service ran would claim the strap was watching a
         // device it has heard nothing about.
         Settings.clearConnected(this)
+        androidx.core.content.ContextCompat.registerReceiver(
+            this,
+            bluetoothEvents,
+            IntentFilter().apply {
+                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
+            },
+            androidx.core.content.ContextCompat.RECEIVER_EXPORTED,
+        )
+        // **The line that splits the two failures.** An empty trail could mean the phone
+        // never told this app about Bluetooth, or it could mean this service was never
+        // running to be told. Until now those looked identical from the screen, and they
+        // need completely different fixes.
+        Settings.noteStrap(this, "listening for Bluetooth")
 
         // A device with no gyroscope needs no special tuning. Rotation only ever lowers
         // the bar, so a device that reports none simply holds every grab to the higher
@@ -198,10 +225,6 @@ class WatchService : Service(), SensorEventListener {
                 addAction(ACTION_STAND_DOWN)
                 addAction(ACTION_DISMISS)
                 addAction(ACTION_REASSERT)
-                // System broadcasts, so a NOT_EXPORTED receiver still gets them - the
-                // same route ACTION_SCREEN_ON and ACTION_USER_PRESENT already take here.
-                addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
-                addAction(BluetoothDevice.ACTION_ACL_DISCONNECTED)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -222,6 +245,8 @@ class WatchService : Service(), SensorEventListener {
         stopListening()
         cancelTether(returned = false)
         runCatching { unregisterReceiver(screenEvents) }
+        runCatching { unregisterReceiver(bluetoothEvents) }
+        Settings.noteStrap(this, "stopped listening")
         super.onDestroy()
     }
 
