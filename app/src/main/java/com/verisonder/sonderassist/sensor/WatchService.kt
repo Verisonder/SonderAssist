@@ -13,6 +13,9 @@ import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.os.Build
 import android.os.IBinder
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.R
 import com.verisonder.sonderassist.Settings
@@ -37,6 +40,7 @@ class WatchService : Service(), SensorEventListener {
     private lateinit var sensors: SensorManager
     private var accelerometer: Sensor? = null
     private var gyroscope: Sensor? = null
+    private var proximitySensor: Sensor? = null
 
     // Rebuilt from the sensitivity setting each time the watch starts, so a change on
     // the slider takes effect the next time the phone is unlocked rather than needing
@@ -50,6 +54,13 @@ class WatchService : Service(), SensorEventListener {
     private var gx = 0f
     private var gy = 0f
     private var gz = 0f
+
+    // Something against the front of the phone. Held the same way as the gyroscope, but
+    // for a different reason: proximity is an on-change sensor and reports nothing at all
+    // while the state holds, so the last reading is the current state rather than a
+    // stale one. It starts false and is cleared on every stop, because a "near" left over
+    // from the last session would blind the detector for the whole of the next one.
+    private var covered = false
 
     private val screenEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -120,6 +131,7 @@ class WatchService : Service(), SensorEventListener {
         sensors = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscope = sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        proximitySensor = sensors.getDefaultSensor(Sensor.TYPE_PROXIMITY)
 
         // A device with no gyroscope needs no special tuning. Rotation only ever lowers
         // the bar, so a device that reports none simply holds every grab to the higher
@@ -170,20 +182,29 @@ class WatchService : Service(), SensorEventListener {
     private fun startListening() {
         if (listening) return
         val accel = accelerometer ?: return
+        // Cleared before anything is registered. Proximity only reports on change, so a
+        // "near" carried over from the last session would sit there unrefuted.
+        covered = false
         detector = SnatchDetector(
             SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this))
+                .copy(rejectWhenCovered = Settings.pocketGuard(this))
         )
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
         // rate buys nothing at this scale and costs battery for the whole session.
         sensors.registerListener(this, accel, SensorManager.SENSOR_DELAY_GAME)
         gyroscope?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
+        // NORMAL, not GAME. Proximity is on-change: it delivers the current state once at
+        // registration and then only when it flips, so asking for a fast rate buys
+        // nothing and the delay argument is close to meaningless for it.
+        proximitySensor?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
         listening = true
     }
 
     private fun stopListening() {
         if (!listening) return
         sensors.unregisterListener(this)
+        covered = false
         listening = false
     }
 
@@ -197,6 +218,15 @@ class WatchService : Service(), SensorEventListener {
                 gz = event.values[2]
             }
 
+            Sensor.TYPE_PROXIMITY -> {
+                // The convention is "anything below the sensor's own maximum is near",
+                // and most phones report exactly two values. Capped at 5 cm as well
+                // because a sensor declaring a large range would otherwise call an arm's
+                // length near and switch the detector off wherever the phone went.
+                val near = minOf(event.sensor.maximumRange, PROXIMITY_NEAR_CM)
+                covered = event.values[0] < near
+            }
+
             Sensor.TYPE_ACCELEROMETER -> {
                 val verdict = detector.accept(
                     Sample(
@@ -205,6 +235,7 @@ class WatchService : Service(), SensorEventListener {
                         ay = event.values[1],
                         az = event.values[2],
                         gx = gx, gy = gy, gz = gz,
+                        covered = covered,
                     )
                 )
                 lastVerdict = when (verdict) {
@@ -235,6 +266,14 @@ class WatchService : Service(), SensorEventListener {
         Settings.noteAlert(this, "locked the screen")
         Settings.setAlertLive(this, true)
 
+        // After the lock, like everything else here, and wrapped because a missing or
+        // refused vibrator must not be able to stop the rest of the sequence. This is the
+        // only part of an alert that arrives while the phone is already in a pocket and
+        // the alarm is still inside its grace period.
+        if (Settings.vibrateOnAlert(this)) {
+            runCatching { buzz() }
+        }
+
         // After the lock, never before it. Locking is the protection; this only makes it
         // harder to undo, and it must not be able to delay or prevent the thing that
         // actually matters.
@@ -256,6 +295,26 @@ class WatchService : Service(), SensorEventListener {
         Alarm.scheduleAfterGrace(this)
 
         showAlert()
+    }
+
+    /**
+     * The buzz that says the watch fired.
+     *
+     * `VibratorManager` from API 31; the direct service below it. The floor here is 28,
+     * so both are needed — and `Vibrator` is only deprecated, not gone, which is why the
+     * old path still works rather than needing a compatibility shim.
+     */
+    private fun buzz() {
+        val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSystemService(VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            getSystemService(Vibrator::class.java)
+        } ?: return
+        if (!vibrator.hasVibrator()) return
+        // -1 is "do not repeat". A pattern that repeats would have to be stopped by
+        // something, and there is nothing running at that point that could stop it.
+        vibrator.vibrate(VibrationEffect.createWaveform(ALERT_PATTERN, -1))
     }
 
     /**
@@ -369,6 +428,15 @@ class WatchService : Service(), SensorEventListener {
         private const val NOTIFICATION_ID = 1
         private const val ALERT_CHANNEL_ID = "alert"
         private const val ALERT_NOTIFICATION_ID = 2
+
+        /** Centimetres. Anything closer than this counts as something covering the front. */
+        private const val PROXIMITY_NEAR_CM = 5f
+
+        /**
+         * Three short knocks and one long one. Deliberately not a pattern any
+         * notification uses, so it is recognisable through a coat without looking.
+         */
+        private val ALERT_PATTERN = longArrayOf(0, 120, 90, 120, 90, 450)
 
         /**
          * Whether the service is actually alive, as opposed to whether the person asked

@@ -72,6 +72,16 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
      * @param heldLagMs how far back that window ends. Samples newer than this are left
      *   out of the held check entirely, so the event being judged cannot decide whether
      *   the phone was in a hand before it.
+     * @param rejectWhenCovered whether a transient counts for nothing while something is
+     *   against the front of the phone. **This is the pocket fix and it is not a
+     *   threshold.** Pushing the phone into a pocket ends with the pocket, or the arm,
+     *   arresting a downward motion — and an arrested downward motion is an upward
+     *   acceleration along exactly the axis this looks for, with the same sign, the same
+     *   sharpness and the same shape as a grab. No threshold separates the two, which is
+     *   why raising them twice did not help. What separates them is where the phone is:
+     *   already inside something, or in open air. Only the moment of the transient is
+     *   judged, not the confirmation window, so a thief who pockets the phone a second
+     *   after taking it is still caught.
      * @param gravityAlpha low-pass coefficient for the gravity estimate. The time constant
      *   is roughly `sampleInterval / (1 - alpha)`, so at 100 Hz this is about half a
      *   second — slow enough to ignore a pull, fast enough to follow the phone being
@@ -98,6 +108,7 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val freeFallMs: Long = 120,
         val windowMs: Long = 900,
         val heldLagMs: Long = 250,
+        val rejectWhenCovered: Boolean = true,
         val gravityAlpha: Float = 0.98f,
     ) {
         companion object {
@@ -225,6 +236,15 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         }
 
         if (jerk >= bar && axial >= tuning.minAxialAccel) {
+            // Judged here and nowhere else. Covered at the instant of the transient means
+            // the phone was already inside something when it happened, which a grab from
+            // an open hand never is. Reported rather than silently skipped, because the
+            // readout saying what it threw away is the only way to tell this gate working
+            // from the detector being asleep.
+            if (tuning.rejectWhenCovered && sample.covered) {
+                verdict = Verdict.Rejected("covered — pocket or bag, not a hand")
+                return verdict
+            }
             inCandidate = true
             candidateAtNs = sample.timestampNs
             candidateJerk = jerk

@@ -41,6 +41,8 @@ not produce it.
    rotation *lowers the jerk needed* instead of being required.
 4. **Motion that does not settle.** A put-down comes to rest inside about a second. A phone
    in someone else's hand does not.
+5. **Open air at the moment it happens.** The proximity sensor must not read near when the
+   transient arrives. See the pocket below — this is the one gate that is not a number.
 
 ## Gravity
 
@@ -64,6 +66,26 @@ failure was found by replaying the fixtures. 0.98 gives about half a second.
 | Knocked | Derivative spikes but the acceleration is not sustained |
 | Phone on a table | No tremor — a held phone always carries some |
 | Already being waved about | Tremor above the upper bound, where a grab is indistinguishable |
+| Put into a pocket | Covered at the moment of the transient |
+
+## The pocket
+
+**Putting the phone into a pocket produces the grab signature exactly, and no threshold
+separates them.** The phone is pushed down; the pocket, or the arm reaching the end of its
+travel, stops it. A stopped downward motion is an upward acceleration — positive, along
++Y, sharp, with the same shape as a pull out of the hand. A firm push into a jeans pocket
+clears any threshold the slider can reach, and walking away afterwards satisfies the
+confirmation window because nothing comes to rest.
+
+This was diagnosed only after the sensitivity range had been moved twice and the most
+cautious position still fired. The fix is not a number. What differs between the two cases
+is **where the phone is**: on its way into a pocket it is already covered when the arrest
+happens, and a phone leaving an open hand is not.
+
+So a transient is ignored while the proximity sensor reads near — and **only at the
+instant of the transient**, never during the confirmation window. A thief who pockets the
+phone a second after taking it is still caught. `rejectWhenCovered` turns it off, and a
+device with no proximity sensor behaves as it did before.
 
 ## Thresholds
 
