@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -220,6 +221,12 @@ fun AppRoot(activity: ComponentActivity) {
                 reportNote = Settings.reportNote(activity)
                 reportRunning = Settings.reportRunning(activity)
                 fullScreen = canUseFullScreen(activity)
+                // Re-read on every return, because the two things that change it both
+                // happen outside this app: granting the permission, and pairing the watch
+                // in the phone's own Bluetooth settings. Without this the list stays empty
+                // after the person has gone and fixed exactly the thing it asked them to.
+                paired = pairedDevices(activity)
+                tetherAddress = Settings.tetherAddress(activity)
                 tileNote = Settings.tileNote(activity)
             }
         }
@@ -366,6 +373,132 @@ fun AppRoot(activity: ComponentActivity) {
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+
+                // On the home screen and not behind the settings button, because it is
+                // the second of the two ways this app can decide the phone is gone. The
+                // first one is the slider above it. Putting one in front and the other
+                // four screens down said they were different kinds of thing, and they are
+                // not.
+                Spacer(Modifier.height(24.dp))
+                SectionLabel("The strap")
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Lock if the strap goes away", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Pick a device you wear. If it disconnects and does not come " +
+                                "back, the phone locks — silently. No message, no sound, " +
+                                "and the screen is not woken. The next time you turn the " +
+                                "screen on the alert is waiting, and it has to be " +
+                                "dismissed the same way any other one does. The location " +
+                                "goes out and the power menu is closed exactly as after " +
+                                "a grab.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = tether,
+                        onCheckedChange = {
+                            tether = it
+                            Settings.setTetherEnabled(activity, it)
+                            if (it) {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    askBluetooth.launch(
+                                        arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT)
+                                    )
+                                }
+                                paired = pairedDevices(activity)
+                            }
+                        },
+                    )
+                }
+
+                if (tether) {
+                    Spacer(Modifier.height(8.dp))
+                    if (paired.isEmpty()) {
+                        // Two reasons the list can be empty and they need different
+                        // answers, so both ways out are offered rather than making the
+                        // person work out which one they are in.
+                        Text(
+                            "Nothing to choose from yet. Either this app has not been " +
+                                "allowed to see your devices, or the watch is not paired " +
+                                "with the phone. The list fills in by itself when you " +
+                                "come back.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Button(onClick = {
+                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                    askBluetooth.launch(
+                                        arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT)
+                                    )
+                                }
+                                paired = pairedDevices(activity)
+                            }) { Text("Allow") }
+                            Spacer(Modifier.width(8.dp))
+                            TextButton(onClick = {
+                                runCatching {
+                                    activity.startActivity(
+                                        Intent(AndroidSettings.ACTION_BLUETOOTH_SETTINGS)
+                                    )
+                                }
+                            }) { Text("Pair a device") }
+                        }
+                    } else {
+                        Text(
+                            "Which device — nothing happens until one is chosen",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        paired.forEach { (address, name) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        Settings.setTether(activity, address, name)
+                                        tetherAddress = address
+                                    }
+                                    .padding(vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                RadioButton(
+                                    selected = address.equals(tetherAddress, ignoreCase = true),
+                                    onClick = {
+                                        Settings.setTether(activity, address, name)
+                                        tetherAddress = address
+                                    },
+                                )
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(name, style = MaterialTheme.typography.bodyLarge)
+                                    Text(address, style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Wait $tetherGrace seconds before acting",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        "Bluetooth drops for reasons that are not theft and almost all of " +
+                            "them come back within a few seconds. If it reconnects inside " +
+                            "this, nothing happens at all.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Slider(
+                        value = tetherGrace.toFloat(),
+                        onValueChange = { tetherGrace = it.toInt() },
+                        onValueChangeFinished = {
+                            Settings.setTetherGraceSeconds(activity, tetherGrace)
+                        },
+                        valueRange = 5f..300f,
+                    )
+                }
 
                 }
 
@@ -521,99 +654,6 @@ fun AppRoot(activity: ComponentActivity) {
                             uprightGuard = it
                             Settings.setUprightGuard(activity, it)
                         },
-                    )
-                }
-
-                Spacer(Modifier.height(16.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Lock if the strap goes away", style = MaterialTheme.typography.bodyLarge)
-                        Text(
-                            "Pick a device you wear. If it disconnects and does not come " +
-                                "back, the phone locks — silently. No message, no sound, " +
-                                "and the screen is not woken. The next time you turn the " +
-                                "screen on the alert is waiting, and it has to be " +
-                                "dismissed the same way any other one does. The location " +
-                                "goes out and the power menu is closed exactly as after " +
-                                "a grab.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                    Switch(
-                        checked = tether,
-                        onCheckedChange = {
-                            tether = it
-                            Settings.setTetherEnabled(activity, it)
-                            if (it) {
-                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                                    askBluetooth.launch(
-                                        arrayOf(android.Manifest.permission.BLUETOOTH_CONNECT)
-                                    )
-                                }
-                                paired = pairedDevices(activity)
-                            }
-                        },
-                    )
-                }
-
-                if (tether) {
-                    Spacer(Modifier.height(8.dp))
-                    if (paired.isEmpty()) {
-                        Text(
-                            "No paired devices to show. Pair the watch in the phone's " +
-                                "own Bluetooth settings first, and allow this app to see " +
-                                "nearby devices.",
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    } else {
-                        Text("Which device", style = MaterialTheme.typography.bodyLarge)
-                        paired.forEach { (address, name) ->
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        Settings.setTether(activity, address, name)
-                                        tetherAddress = address
-                                    }
-                                    .padding(vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                RadioButton(
-                                    selected = address.equals(tetherAddress, ignoreCase = true),
-                                    onClick = {
-                                        Settings.setTether(activity, address, name)
-                                        tetherAddress = address
-                                    },
-                                )
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(name, style = MaterialTheme.typography.bodyLarge)
-                                    Text(address, style = MaterialTheme.typography.bodySmall)
-                                }
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Wait $tetherGrace seconds before acting",
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                    Text(
-                        "Bluetooth drops for reasons that are not theft and almost all of " +
-                            "them come back within a few seconds. If it reconnects inside " +
-                            "this, nothing happens at all.",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Slider(
-                        value = tetherGrace.toFloat(),
-                        onValueChange = { tetherGrace = it.toInt() },
-                        onValueChangeFinished = {
-                            Settings.setTetherGraceSeconds(activity, tetherGrace)
-                        },
-                        valueRange = 5f..300f,
                     )
                 }
 
