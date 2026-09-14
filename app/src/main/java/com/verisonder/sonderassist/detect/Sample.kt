@@ -17,10 +17,6 @@ import kotlin.math.sqrt
  *   TYPE_LINEAR_ACCELERATION: the latter is a fused, smoothed estimate and the smoothing
  *   removes exactly the sharp transient being looked for.
  * @param gx angular velocity, rad/s. Zero throughout if the device has no gyroscope.
- * @param covered whether something is against the front of the phone — the proximity
- *   sensor reading near. A phone sliding into a pocket is covered before it lands; a
- *   phone being pulled out of an open hand is not. False on a device with no proximity
- *   sensor, which leaves the detector exactly as it was.
  */
 data class Sample(
     val timestampNs: Long,
@@ -30,7 +26,6 @@ data class Sample(
     val gx: Float = 0f,
     val gy: Float = 0f,
     val gz: Float = 0f,
-    val covered: Boolean = false,
 ) {
     val accelMagnitude: Float get() = sqrt(ax * ax + ay * ay + az * az)
 
