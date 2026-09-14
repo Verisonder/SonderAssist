@@ -68,7 +68,7 @@ object Reporter {
      * Called at the lock, not after it: the countdown is the point.
      */
     @Synchronized
-    fun start(context: Context) {
+    fun start(context: Context, delaySeconds: Int? = null) {
         if (!Settings.reportEnabled(context)) return
         val app = context.applicationContext
         cancel()
@@ -76,8 +76,11 @@ object Reporter {
         liveMessageId = null
         lastStatusAt = 0L
         Settings.setReportRunning(app, true)
-        show(app, "Starting in ${Settings.reportDelaySeconds(app)} seconds")
-        schedule(app, Settings.reportDelaySeconds(app))
+        // The strap can want a different wait from a grab: one is a guess about a
+        // Bluetooth drop, the other is a phone that just left your hand.
+        val delay = delaySeconds ?: Settings.reportDelaySeconds(app)
+        show(app, "Starting in $delay seconds")
+        schedule(app, delay)
     }
 
     /**

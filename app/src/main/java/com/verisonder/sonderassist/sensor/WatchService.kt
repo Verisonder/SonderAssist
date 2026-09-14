@@ -443,7 +443,8 @@ class WatchService : Service(), SensorEventListener {
         // refused vibrator must not be able to stop the rest of the sequence. This is the
         // only part of an alert that arrives while the phone is already in a pocket and
         // the alarm is still inside its grace period.
-        if (Settings.vibrateOnAlert(this)) {
+        val wantsBuzz = if (quiet) Settings.strapVibrate(this) else Settings.vibrateOnAlert(this)
+        if (wantsBuzz) {
             runCatching { buzz() }
         }
 
@@ -452,7 +453,7 @@ class WatchService : Service(), SensorEventListener {
         // actually matters.
         // Started at the lock, not after it. The countdown to the first report is the whole
         // design: it has to run out before the phone can be switched off.
-        runCatching { Reporter.start(this) }
+        runCatching { Reporter.start(this, if (quiet) Settings.strapDelaySeconds(this) else null) }
 
         val closed = runCatching { PowerMenu.suppress(this) }.getOrDefault(false)
         if (Settings.blockPowerMenu(this)) {

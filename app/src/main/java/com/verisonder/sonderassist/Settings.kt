@@ -43,6 +43,8 @@ object Settings {
     private const val TETHER_NAME = "tether_name"
     private const val TETHER_GRACE = "tether_grace"
     private const val STRAP_NOTE = "strap_note"
+    private const val STRAP_VIBRATE = "strap_vibrate"
+    private const val STRAP_DELAY = "strap_delay"
     private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
     private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
@@ -319,7 +321,23 @@ object Settings {
         of(context).getInt(TETHER_GRACE, DEFAULT_TETHER_GRACE)
 
     fun setTetherGraceSeconds(context: Context, value: Int) {
-        of(context).edit().putInt(TETHER_GRACE, value.coerceIn(5, 300)).apply()
+        // Zero is allowed: a drop you already trust needs no wait.
+        of(context).edit().putInt(TETHER_GRACE, value.coerceIn(0, 300)).apply()
+    }
+
+    /** Buzz when the strap fires. Separate from the grab buzz — this one is silent work. */
+    fun strapVibrate(context: Context): Boolean = of(context).getBoolean(STRAP_VIBRATE, true)
+
+    fun setStrapVibrate(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(STRAP_VIBRATE, value).apply()
+    }
+
+    /** Seconds before the location goes out on a strap alert. */
+    fun strapDelaySeconds(context: Context): Int =
+        of(context).getInt(STRAP_DELAY, DEFAULT_REPORT_DELAY)
+
+    fun setStrapDelaySeconds(context: Context, value: Int) {
+        of(context).edit().putInt(STRAP_DELAY, value.coerceIn(0, 600)).apply()
     }
 
     /**
