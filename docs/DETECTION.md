@@ -41,8 +41,6 @@ not produce it.
    rotation *lowers the jerk needed* instead of being required.
 4. **Motion that does not settle.** A put-down comes to rest inside about a second. A phone
    in someone else's hand does not.
-5. **Open air at the moment it happens.** The proximity sensor must not read near when the
-   transient arrives. See the pocket below — this is the one gate that is not a number.
 
 ## Gravity
 
@@ -66,26 +64,38 @@ failure was found by replaying the fixtures. 0.98 gives about half a second.
 | Knocked | Derivative spikes but the acceleration is not sustained |
 | Phone on a table | No tremor — a held phone always carries some |
 | Already being waved about | Tremor above the upper bound, where a grab is indistinguishable |
-| Put into a pocket | Covered at the moment of the transient |
 
 ## The pocket
 
-**Putting the phone into a pocket produces the grab signature exactly, and no threshold
-separates them.** The phone is pushed down; the pocket, or the arm reaching the end of its
-travel, stops it. A stopped downward motion is an upward acceleration — positive, along
-+Y, sharp, with the same shape as a pull out of the hand. A firm push into a jeans pocket
-clears any threshold the slider can reach, and walking away afterwards satisfies the
-confirmation window because nothing comes to rest.
+**The phone goes in top edge first.** That is the whole thing, and it was misread twice
+before it was measured. With the top edge leading, the phone's +Y axis points at the
+ground for the entire descent — so shoving it down the pocket is a shove toward its own
+top edge, which is the grab signature exactly. Not the arrest at the bottom, as was
+assumed first: the push itself, at full strength, at the start of the motion.
 
-This was diagnosed only after the sensitivity range had been moved twice and the most
-cautious position still fired. The fix is not a number. What differs between the two cases
-is **where the phone is**: on its way into a pocket it is already covered when the arrest
-happens, and a phone leaving an open hand is not.
+Same axis, same sign, same shape. No threshold on the event can separate them, which is
+why the sensitivity range was moved twice with no effect and why the most cautious
+position still fired.
 
-So a transient is ignored while the proximity sensor reads near — and **only at the
-instant of the transient**, never during the confirmation window. A thief who pockets the
-phone a second after taking it is still caught. `rejectWhenCovered` turns it off, and a
-device with no proximity sensor behaves as it did before.
+**Proximity was tried in 4.6 and was wrong.** The sensor sits at the top of the front
+face, which is precisely where a grabbing hand lands, so "covered" reads true during a
+real theft as readily as inside a pocket. It suppressed thefts. Removed; do not try it
+again.
+
+What separates them is the **attitude of the phone while it happens**. Going into a
+pocket it is upside down. Being taken off you, it is not — nobody is holding a phone
+inverted when it is snatched. So a transient is ignored while the gravity estimate reads
+below `uprightMinGravityY` on Y, which is −4.9: the top edge more than thirty degrees
+below horizontal. A phone held flat in an open palm reads near zero on Y and is untouched.
+
+**Off by default**, under "Ignore it while the phone is upside down". It is still a rule
+about when *not* to fire, and this app does not start refusing to fire on its own.
+
+**Sign, since it is now load-bearing.** The accelerometer reports +9.81 along whichever
+axis points up, so a phone held the right way up reads positive on Y. The fixtures modelled
+rest at −8.5 and called it "gravity along −Y" — the gravity vector, not the reading. It
+changed no verdict, because the detector subtracts the estimate and only the difference
+reaches the gates, but it modelled every fixture as an upside-down phone. Corrected.
 
 ## Thresholds
 

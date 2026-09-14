@@ -72,16 +72,21 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
      * @param heldLagMs how far back that window ends. Samples newer than this are left
      *   out of the held check entirely, so the event being judged cannot decide whether
      *   the phone was in a hand before it.
-     * @param rejectWhenCovered whether a transient counts for nothing while something is
-     *   against the front of the phone. **This is the pocket fix and it is not a
-     *   threshold.** Pushing the phone into a pocket ends with the pocket, or the arm,
-     *   arresting a downward motion — and an arrested downward motion is an upward
-     *   acceleration along exactly the axis this looks for, with the same sign, the same
-     *   sharpness and the same shape as a grab. No threshold separates the two, which is
-     *   why raising them twice did not help. What separates them is where the phone is:
-     *   already inside something, or in open air. Only the moment of the transient is
-     *   judged, not the confirmation window, so a thief who pockets the phone a second
-     *   after taking it is still caught.
+     * @param uprightMinGravityY m/s² on the Y axis of the gravity estimate, below which
+     *   the phone is upside down and a transient counts for nothing.
+     *
+     *   **This is the pocket fix, and it is not a threshold on the event.** The phone
+     *   goes into a pocket top edge first, so its +Y axis points at the ground for the
+     *   whole descent — and the push down the pocket is therefore a push toward the
+     *   phone's own top edge, which is the grab signature exactly. Not the arrest at the
+     *   bottom: the shove itself, at full strength, at the start of the motion. Same
+     *   axis, same sign, same shape, which is why two remaps of the thresholds and a
+     *   proximity gate all failed to separate them — they were all arguing about the
+     *   event when the difference is in the phone's attitude while it happens.
+     *
+     *   Nobody is holding a phone upside down when it is taken off them. −4.9 is the top
+     *   edge more than thirty degrees below horizontal, which leaves a phone held flat in
+     *   an open palm well clear.
      * @param gravityAlpha low-pass coefficient for the gravity estimate. The time constant
      *   is roughly `sampleInterval / (1 - alpha)`, so at 100 Hz this is about half a
      *   second — slow enough to ignore a pull, fast enough to follow the phone being
@@ -108,10 +113,17 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val freeFallMs: Long = 120,
         val windowMs: Long = 900,
         val heldLagMs: Long = 250,
-        val rejectWhenCovered: Boolean = true,
+        val uprightMinGravityY: Float = UPSIDE_DOWN_Y,
         val gravityAlpha: Float = 0.98f,
     ) {
         companion object {
+            /**
+             * The top edge more than thirty degrees below horizontal. Held here so the
+             * service and the fixtures name the same number rather than each carrying a
+             * copy of it.
+             */
+            const val UPSIDE_DOWN_Y = -4.9f
+
             /**
              * Turn one slider into a set of thresholds.
              *
@@ -236,13 +248,12 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         }
 
         if (jerk >= bar && axial >= tuning.minAxialAccel) {
-            // Judged here and nowhere else. Covered at the instant of the transient means
-            // the phone was already inside something when it happened, which a grab from
-            // an open hand never is. Reported rather than silently skipped, because the
-            // readout saying what it threw away is the only way to tell this gate working
-            // from the detector being asleep.
-            if (tuning.rejectWhenCovered && sample.covered) {
-                verdict = Verdict.Rejected("covered — pocket or bag, not a hand")
+            // The attitude of the phone, not the size of the event. Reported rather than
+            // skipped in silence, because a readout that says what was thrown away is the
+            // only way to tell this working from the detector being asleep — which is
+            // exactly what the proximity gate it replaces could not be told apart from.
+            if (gravityY < tuning.uprightMinGravityY) {
+                verdict = Verdict.Rejected("upside down — going into a pocket")
                 return verdict
             }
             inCandidate = true

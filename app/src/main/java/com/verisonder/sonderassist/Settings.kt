@@ -37,7 +37,7 @@ object Settings {
     private const val REPORT_NOTE = "report_note"
     private const val REPORT_RUNNING = "report_running"
     private const val ALERT_LIVE = "alert_live"
-    private const val POCKET_GUARD = "pocket_guard"
+    private const val UPRIGHT_GUARD = "upright_guard"
     private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
@@ -201,18 +201,17 @@ object Settings {
     }
 
     /**
-     * Ignore a transient while the proximity sensor reads near.
+     * Ignore a transient while the phone is upside down.
      *
-     * **On by default, which is a deliberate break from the rule that everything optional
-     * starts off.** The others are features; this is a correction. Putting the phone in a
-     * pocket produced the same signature as a grab and fired at every slider position
-     * down to the most cautious, so leaving the fix switched off would ship the bug. The
-     * switch exists to turn it back off, not to turn it on.
+     * Off until asked for, like everything else optional here. It is the answer to the
+     * pocket firing — the phone goes in top edge first, so the shove down the pocket is a
+     * shove toward its own top edge and reads as a grab — but it is still a rule about
+     * when not to fire, and this app does not start refusing to fire on its own.
      */
-    fun pocketGuard(context: Context): Boolean = of(context).getBoolean(POCKET_GUARD, true)
+    fun uprightGuard(context: Context): Boolean = of(context).getBoolean(UPRIGHT_GUARD, false)
 
-    fun setPocketGuard(context: Context, value: Boolean) {
-        of(context).edit().putBoolean(POCKET_GUARD, value).apply()
+    fun setUprightGuard(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(UPRIGHT_GUARD, value).apply()
     }
 
     /**

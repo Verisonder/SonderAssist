@@ -186,8 +186,16 @@ class WatchService : Service(), SensorEventListener {
         // "near" carried over from the last session would sit there unrefuted.
         covered = false
         detector = SnatchDetector(
-            SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this))
-                .copy(rejectWhenCovered = Settings.pocketGuard(this))
+            SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this)).copy(
+                // Negative infinity is the gate open: no gravity reading is below it, so
+                // the comparison can stay one unconditional line in the detector rather
+                // than a flag the hot path has to test as well.
+                uprightMinGravityY = if (Settings.uprightGuard(this)) {
+                    SnatchDetector.Tuning.UPSIDE_DOWN_Y
+                } else {
+                    Float.NEGATIVE_INFINITY
+                }
+            )
         )
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
@@ -314,7 +322,37 @@ class WatchService : Service(), SensorEventListener {
         if (!vibrator.hasVibrator()) return
         // -1 is "do not repeat". A pattern that repeats would have to be stopped by
         // something, and there is nothing running at that point that could stop it.
-        vibrator.vibrate(VibrationEffect.createWaveform(ALERT_PATTERN, -1))
+        val effect = VibrationEffect.createWaveform(ALERT_PATTERN, -1)
+
+        // **The usage is the whole thing, not a detail.** A vibration with no usage is
+        // unclassified, and an unclassified vibration from an app in the background is
+        // suppressed under Do Not Disturb and may not be delivered at all — the
+        // documentation is explicit that a background app has to declare a ringtone,
+        // notification or alarm usage to vibrate. The first version of this buzz declared
+        // none, which is why it was never felt on a phone kept in Do Not Disturb.
+        //
+        // Alarm, for the same reason the siren runs on the alarm stream: a phone worth
+        // taking is very often silenced, and this has to arrive anyway.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            vibrator.vibrate(
+                effect,
+                android.os.VibrationAttributes.createForUsage(
+                    android.os.VibrationAttributes.USAGE_ALARM
+                ),
+            )
+        } else {
+            // VibrationAttributes is API 30 and the floor here is 28. The AudioAttributes
+            // overload is the older route to the same classification and carries the same
+            // alarm usage; audio flags do nothing to a vibration, only the usage counts.
+            @Suppress("DEPRECATION")
+            vibrator.vibrate(
+                effect,
+                android.media.AudioAttributes.Builder()
+                    .setUsage(android.media.AudioAttributes.USAGE_ALARM)
+                    .setContentType(android.media.AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                    .build(),
+            )
+        }
     }
 
     /**
