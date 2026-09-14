@@ -42,6 +42,8 @@ object Settings {
     private const val TETHER_ADDRESS = "tether_address"
     private const val TETHER_NAME = "tether_name"
     private const val TETHER_GRACE = "tether_grace"
+    private const val STRAP_NOTE = "strap_note"
+    private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
     private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
@@ -243,6 +245,51 @@ object Settings {
      * missing a theft: it is the failure that gets the whole thing switched off.
      */
     const val DEFAULT_TETHER_GRACE = 30
+
+    /**
+     * What the strap last saw, most recent first.
+     *
+     * Its own trail rather than the alert one. The strap notices things that never become
+     * an alert — a drop that came back, a device going away that was not the chosen one —
+     * and writing those into the alert trail would wipe the record of the last real theft
+     * every time a pair of earbuds went flat.
+     */
+    fun strapNote(context: Context): String? = of(context).getString(STRAP_NOTE, null)
+
+    fun noteStrap(context: Context, what: String) {
+        val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
+        val kept = strapNote(context)?.lines().orEmpty()
+        of(context).edit()
+            .putString(STRAP_NOTE, (listOf("$at $what") + kept).take(6).joinToString("\n"))
+            .commit()
+    }
+
+    /**
+     * Which devices the service has actually watched connect, by address.
+     *
+     * **This is a readout before it is a feature.** The picker showing a device as
+     * connected means the app received a Bluetooth broadcast about it — which is the one
+     * thing that has to be true for the strap to work at all. A list where nothing is ever
+     * marked connected is the answer to why nothing fires, and it is visible without a
+     * build or a log.
+     *
+     * Kept only while the service lives, and cleared when it starts, because a device
+     * marked connected from yesterday is worse than no mark at all.
+     */
+    fun connectedSet(context: Context): Set<String> =
+        of(context).getString(CONNECTED, "").orEmpty()
+            .split(",").filter { it.isNotBlank() }.toSet()
+
+    fun setConnected(context: Context, address: String, connected: Boolean) {
+        val next = connectedSet(context).toMutableSet()
+        if (connected) next.add(address.uppercase()) else next.remove(address.uppercase())
+        of(context).edit().putString(CONNECTED, next.joinToString(",")).commit()
+    }
+
+    fun clearConnected(context: Context) {
+        of(context).edit().putString(CONNECTED, "").commit()
+    }
 
     /** Lock when a paired device goes away. Off until asked for. */
     fun tetherEnabled(context: Context): Boolean = of(context).getBoolean(TETHER, false)

@@ -29,7 +29,10 @@ class BootReceiver : BroadcastReceiver() {
         // path never ran, and the person has no idea why the button stopped working.
         runCatching { PowerMenu.restore(context) }
 
-        if (!Settings.armed(context)) return
+        // Either reason to exist is enough. The strap survives a reboot too, and it was
+        // not coming back because this asked only about the watch.
+        val strap = Settings.tetherEnabled(context) && Settings.tetherAddress(context).isNotEmpty()
+        if (!Settings.armed(context) && !strap) return
         // No point starting a watch that cannot lock anything.
         if (!DeviceAdminLocker.isReady(context)) return
         runCatching { WatchService.start(context) }

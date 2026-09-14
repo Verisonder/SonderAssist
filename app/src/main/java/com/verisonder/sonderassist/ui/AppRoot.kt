@@ -124,6 +124,8 @@ fun AppRoot(activity: ComponentActivity) {
     var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
     var paired by remember { mutableStateOf(pairedDevices(activity)) }
+    var connected by remember { mutableStateOf(Settings.connectedSet(activity)) }
+    var strapNote by remember { mutableStateOf(Settings.strapNote(activity)) }
     val askBluetooth = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { paired = pairedDevices(activity) }
@@ -227,6 +229,8 @@ fun AppRoot(activity: ComponentActivity) {
                 // after the person has gone and fixed exactly the thing it asked them to.
                 paired = pairedDevices(activity)
                 tetherAddress = Settings.tetherAddress(activity)
+                connected = Settings.connectedSet(activity)
+                strapNote = Settings.strapNote(activity)
                 tileNote = Settings.tileNote(activity)
             }
         }
@@ -404,6 +408,10 @@ fun AppRoot(activity: ComponentActivity) {
                         onCheckedChange = {
                             tether = it
                             Settings.setTetherEnabled(activity, it)
+                            // The strap lives in the service, so the switch has to be
+                            // able to start it. It used to depend on the watch being on
+                            // and said nothing about it.
+                            WatchService.sync(activity)
                             if (it) {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                     askBluetooth.launch(
@@ -460,6 +468,7 @@ fun AppRoot(activity: ComponentActivity) {
                                     .clickable {
                                         Settings.setTether(activity, address, name)
                                         tetherAddress = address
+                                        WatchService.sync(activity)
                                     }
                                     .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -469,11 +478,20 @@ fun AppRoot(activity: ComponentActivity) {
                                     onClick = {
                                         Settings.setTether(activity, address, name)
                                         tetherAddress = address
+                                        WatchService.sync(activity)
                                     },
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(name, style = MaterialTheme.typography.bodyLarge)
-                                    Text(address, style = MaterialTheme.typography.bodySmall)
+                                    Text(
+                                        if (connected.contains(address.uppercase())) {
+                                            "connected — $address"
+                                        } else {
+                                            address
+                                        },
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
                                 }
                             }
                         }
@@ -497,6 +515,26 @@ fun AppRoot(activity: ComponentActivity) {
                             Settings.setTetherGraceSeconds(activity, tetherGrace)
                         },
                         valueRange = 5f..300f,
+                    )
+
+                    Spacer(Modifier.height(12.dp))
+                    Text("What the strap has seen", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        strapNote ?: "Nothing yet.",
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        // Said outright, because an empty list is the finding and an
+                        // absence reads as nothing having happened rather than as an
+                        // answer.
+                        "Turn a paired device off and come back. If nothing appears here " +
+                            "at all, the phone is not telling this app about Bluetooth, " +
+                            "and that is why the strap does not fire — not the wait, not " +
+                            "the device you picked.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
 

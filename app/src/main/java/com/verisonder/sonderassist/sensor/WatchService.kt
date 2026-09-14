@@ -131,6 +131,9 @@ class WatchService : Service(), SensorEventListener {
                 // The Stop action on the reporting notification.
                 ACTION_STOP_REPORT -> Reporter.stop(this@WatchService)
 
+                // The watch was switched off while the strap still wants the service.
+                ACTION_STAND_DOWN -> stopListening()
+
                 // The alert screen was navigated away from rather than covered - the
                 // home gesture, which no app can block. Nothing needs to go dark for
                 // that; the screen is still on and the alert simply goes back in front.
@@ -145,15 +148,17 @@ class WatchService : Service(), SensorEventListener {
                     Settings.setAlertLive(this@WatchService, false)
                 }
 
-                // The strap. Only the one chosen device counts - headphones and a car
-                // disconnect all day and neither is on a wrist.
+                // Every device is recorded, not only the chosen one, because the record
+                // is what proves these broadcasts arrive at all. Only the chosen one acts.
                 BluetoothDevice.ACTION_ACL_DISCONNECTED -> {
+                    note(intent, connected = false)
                     if (isTethered(intent)) armTether()
                 }
 
                 // It came back inside the grace. That is the doorway and the wrist turned
                 // the wrong way, not a theft.
                 BluetoothDevice.ACTION_ACL_CONNECTED -> {
+                    note(intent, connected = true)
                     if (isTethered(intent)) cancelTether(returned = true)
                 }
             }
@@ -167,6 +172,10 @@ class WatchService : Service(), SensorEventListener {
         sensors = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscope = sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        // Nothing is known about what is connected until a broadcast says so. A mark left
+        // over from the last time the service ran would claim the strap was watching a
+        // device it has heard nothing about.
+        Settings.clearConnected(this)
 
         // A device with no gyroscope needs no special tuning. Rotation only ever lowers
         // the bar, so a device that reports none simply holds every grab to the higher
@@ -186,6 +195,7 @@ class WatchService : Service(), SensorEventListener {
                 addAction(Intent.ACTION_SCREEN_ON)
                 addAction(ACTION_SILENCE)
                 addAction(ACTION_STOP_REPORT)
+                addAction(ACTION_STAND_DOWN)
                 addAction(ACTION_DISMISS)
                 addAction(ACTION_REASSERT)
                 // System broadcasts, so a NOT_EXPORTED receiver still gets them - the
@@ -221,6 +231,10 @@ class WatchService : Service(), SensorEventListener {
 
     private fun startListening() {
         if (listening) return
+        // The service can now be alive purely for the strap. Watching for a grab is a
+        // separate thing the person asked for separately, and the sensors follow that
+        // switch rather than following whether this service happens to exist.
+        if (!Settings.armed(this)) return
         val accel = accelerometer ?: return
         detector = SnatchDetector(
             SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this)).copy(
@@ -288,21 +302,45 @@ class WatchService : Service(), SensorEventListener {
 
     // ------------------------------------------------------------------- the strap
 
+    /**
+     * Write down that a device came or went, whoever it was.
+     *
+     * Separate from acting on it on purpose. Every question about why the strap did not
+     * fire begins with whether the phone told this app anything, and until now there was
+     * no way to answer that from the phone.
+     */
+    private fun note(intent: Intent?, connected: Boolean) {
+        val device = deviceOf(intent) ?: return
+        val address = device.address ?: return
+        Settings.setConnected(this, address, connected)
+        val name = runCatching { device.name }.getOrNull() ?: address
+        val chosen = address.equals(Settings.tetherAddress(this), ignoreCase = true)
+        val word = if (connected) "connected" else "disconnected"
+        val tail = when {
+            !Settings.tetherEnabled(this) -> " (strap is off)"
+            Settings.tetherAddress(this).isEmpty() -> " (no device chosen)"
+            chosen -> " — this is the one"
+            else -> " (not the chosen one)"
+        }
+        Settings.noteStrap(this, "$name $word$tail")
+    }
+
+    private fun deviceOf(intent: Intent?): BluetoothDevice? =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+        } else {
+            @Suppress("DEPRECATION")
+            intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+        }
+
     /** Whether the device in this broadcast is the one chosen, by address. */
     private fun isTethered(intent: Intent?): Boolean {
         if (!Settings.tetherEnabled(this)) return false
         val chosen = Settings.tetherAddress(this)
         if (chosen.isEmpty()) return false
-        val device: BluetoothDevice? =
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
-            } else {
-                @Suppress("DEPRECATION")
-                intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
-            }
         // The address, never the name. A name is whatever the other device says it is
         // and two of them can say the same thing.
-        return device?.address.equals(chosen, ignoreCase = true)
+        return deviceOf(intent)?.address.equals(chosen, ignoreCase = true)
     }
 
     /**
@@ -317,7 +355,7 @@ class WatchService : Service(), SensorEventListener {
         cancelTether(returned = false)
         // Recorded now rather than when it fires, because the interesting case is the one
         // that never fires and would otherwise leave no trace at all.
-        Settings.noteAlert(this, "the strap disconnected", fresh = true)
+        Settings.noteStrap(this, "counting down")
         val seconds = Settings.tetherGraceSeconds(this)
         // Acquired before the delay is posted, not after: between the two the phone is
         // already free to go back to sleep.
@@ -349,7 +387,7 @@ class WatchService : Service(), SensorEventListener {
     private fun cancelTether(returned: Boolean) {
         tetherPending?.let {
             tetherHandler.removeCallbacks(it)
-            if (returned) Settings.noteAlert(this, "the strap came back, standing down")
+            if (returned) Settings.noteStrap(this, "came back inside the wait, standing down")
         }
         tetherPending = null
         releaseTetherWake()
@@ -620,9 +658,35 @@ class WatchService : Service(), SensorEventListener {
             context.startForegroundService(Intent(context, WatchService::class.java))
         }
 
+        /**
+         * Stop watching — which is not always the same as stopping the service.
+         *
+         * **The strap needs the receiver, and the receiver needs this service alive.** It
+         * was put here because everything that survives belongs to the service, and then
+         * a switch on the home screen quietly depended on a different switch: turn the
+         * watch off and the strap stopped existing, with nothing on screen saying so. The
+         * service now stays up for the strap and merely stops reading the sensors.
+         */
         fun stop(context: Context) {
+            if (Settings.tetherEnabled(context) && Settings.tetherAddress(context).isNotEmpty()) {
+                context.sendBroadcast(Intent(ACTION_STAND_DOWN).setPackage(context.packageName))
+                return
+            }
             context.stopService(Intent(context, WatchService::class.java))
         }
+
+        /** Keep the service alive if anything still needs it, start it if so. */
+        fun sync(context: Context) {
+            if (Settings.armed(context) ||
+                (Settings.tetherEnabled(context) && Settings.tetherAddress(context).isNotEmpty())
+            ) {
+                start(context)
+            } else {
+                context.stopService(Intent(context, WatchService::class.java))
+            }
+        }
+
+        private const val ACTION_STAND_DOWN = "com.verisonder.sonderassist.STAND_DOWN"
 
         /** Private to this app: the receiver is registered RECEIVER_NOT_EXPORTED. */
         private const val ACTION_SILENCE = "com.verisonder.sonderassist.SILENCE"
