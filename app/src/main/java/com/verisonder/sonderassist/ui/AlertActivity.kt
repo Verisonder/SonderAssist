@@ -22,6 +22,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -143,11 +148,8 @@ class AlertActivity : ComponentActivity() {
             return
         }
 
-        val message = if (Settings.alertQuiet(this)) {
-            Settings.strapMessage(this)
-        } else {
-            Settings.message(this)
-        }
+        val message = messageForThisAlert()
+        val typeStep = Settings.typeSpeedMs(this)
         // Decoded once, here, rather than in composition: this screen appears at the
         // worst possible moment and must not be waiting on a decode to draw.
         val background = Settings.backgroundUri(this)?.let { uri ->
@@ -179,8 +181,24 @@ class AlertActivity : ComponentActivity() {
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
+                        // Same effect as the J.A.R.V.I.S screen, expressed the way this
+                        // one is built. The caret is part of the string rather than a
+                        // second composable, so it cannot end up on its own line when the
+                        // message wraps - and it is gone on the last character.
+                        var shown by remember { mutableStateOf(if (typeStep <= 0) message else "") }
+                        LaunchedEffect(message, typeStep) {
+                            if (typeStep <= 0 || message.isEmpty()) {
+                                shown = message
+                                return@LaunchedEffect
+                            }
+                            shown = ""
+                            for (i in 1..message.length) {
+                                kotlinx.coroutines.delay(typeStep.toLong())
+                                shown = if (i == message.length) message else message.take(i) + CARET
+                            }
+                        }
                         Text(
-                            message,
+                            shown,
                             style = MaterialTheme.typography.headlineMedium,
                             // Over a picture the theme colour is a coin toss, so the text
                             // carries its own contrast: white on a dark scrim behind it.
@@ -242,11 +260,7 @@ class AlertActivity : ComponentActivity() {
             // A quiet alert says nothing. The strap disconnecting is not a claim about
             // anyone holding the phone, and a message accusing whoever is looking at it
             // would be wrong most of the times this appears.
-            text = if (Settings.alertQuiet(this@AlertActivity)) {
-                Settings.strapMessage(this@AlertActivity)
-            } else {
-                Settings.message(this@AlertActivity)
-            }
+            text = ""
             setTextColor(android.graphics.Color.WHITE)
             textSize = 24f
             gravity = Gravity.CENTER
@@ -262,6 +276,41 @@ class AlertActivity : ComponentActivity() {
                 addView(hud, MATCH)
             }
         )
+        typeInto(words, messageForThisAlert())
+    }
+
+    /** The grab message, or the strap's own. Blank is a real answer and types nothing. */
+    private fun messageForThisAlert(): String =
+        if (Settings.alertQuiet(this)) Settings.strapMessage(this) else Settings.message(this)
+
+    /**
+     * Type a message into a plain TextView, one character at a time.
+     *
+     * Posted rather than animated because these are `View`s ported whole from another
+     * project and are not Compose. The block is part of the text rather than a second
+     * view, so it cannot drift out of line with the last letter, and it is dropped on the
+     * final character rather than left blinking at the end.
+     *
+     * A speed of zero means the whole message at once, which is what this screen did
+     * before and is still the right answer for anyone who does not want the effect.
+     */
+    private fun typeInto(view: TextView, text: String) {
+        val step = Settings.typeSpeedMs(this).toLong()
+        if (step <= 0L || text.isEmpty()) {
+            view.text = text
+            return
+        }
+        var i = 0
+        val run = object : Runnable {
+            override fun run() {
+                i++
+                val done = i >= text.length
+                view.text = if (done) text else text.take(i) + CARET
+                if (!done) handler.postDelayed(this, step)
+            }
+        }
+        view.text = ""
+        handler.postDelayed(run, step)
     }
 
     override fun onResume() {
@@ -383,6 +432,13 @@ class AlertActivity : ComponentActivity() {
     private companion object {
         /** How long the alert ignores being paused after it arrives. */
         const val ARM_DELAY_MS = 1_000L
+
+        /**
+         * The block that follows the last letter typed so far, and is dropped when there
+         * are no more. A full block rather than an underscore because it is legible at a
+         * glance on a dark screen from arm's length.
+         */
+        private const val CARET = "\u2588"
 
         /** How long to let whatever covered the screen settle before locking. */
         const val GO_DARK_DELAY_MS = 1_000L
