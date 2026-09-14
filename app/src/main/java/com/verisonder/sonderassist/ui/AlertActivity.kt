@@ -143,7 +143,11 @@ class AlertActivity : ComponentActivity() {
             return
         }
 
-        val message = if (Settings.alertQuiet(this)) "" else Settings.message(this)
+        val message = if (Settings.alertQuiet(this)) {
+            Settings.strapMessage(this)
+        } else {
+            Settings.message(this)
+        }
         // Decoded once, here, rather than in composition: this screen appears at the
         // worst possible moment and must not be waiting on a decode to draw.
         val background = Settings.backgroundUri(this)?.let { uri ->
@@ -239,7 +243,7 @@ class AlertActivity : ComponentActivity() {
             // anyone holding the phone, and a message accusing whoever is looking at it
             // would be wrong most of the times this appears.
             text = if (Settings.alertQuiet(this@AlertActivity)) {
-                ""
+                Settings.strapMessage(this@AlertActivity)
             } else {
                 Settings.message(this@AlertActivity)
             }

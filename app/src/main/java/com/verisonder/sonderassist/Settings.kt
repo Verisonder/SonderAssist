@@ -43,6 +43,7 @@ object Settings {
     private const val TETHER_NAME = "tether_name"
     private const val TETHER_GRACE = "tether_grace"
     private const val STRAP_NOTE = "strap_note"
+    private const val STRAP_MESSAGE = "strap_message"
     private const val STRAP_VIBRATE = "strap_vibrate"
     private const val STRAP_DELAY = "strap_delay"
     private const val CONNECTED = "connected"
@@ -323,6 +324,22 @@ object Settings {
     fun setTetherGraceSeconds(context: Context, value: Int) {
         // Zero is allowed: a drop you already trust needs no wait.
         of(context).edit().putInt(TETHER_GRACE, value.coerceIn(0, 300)).apply()
+    }
+
+    const val DEFAULT_STRAP_MESSAGE = "Wait for the owner to come back"
+
+    /**
+     * What a strap alert shows, separate from the grab message.
+     *
+     * A strap alert fires on a Bluetooth drop, which is a guess about where your watch
+     * went rather than a claim that someone is holding your phone — so it should not be
+     * able to accuse whoever reads it. Blank is a real choice and shows nothing at all.
+     */
+    fun strapMessage(context: Context): String =
+        of(context).getString(STRAP_MESSAGE, DEFAULT_STRAP_MESSAGE).orEmpty()
+
+    fun setStrapMessage(context: Context, value: String) {
+        of(context).edit().putString(STRAP_MESSAGE, value.take(200)).apply()
     }
 
     /** Buzz when the strap fires. Separate from the grab buzz — this one is silent work. */
