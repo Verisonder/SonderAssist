@@ -47,6 +47,12 @@
       app reads the list of devices already paired, and listens for one of them going
       away.
     -->
+    <!--
+      Held only for the seconds between the strap disconnecting and the decision about it,
+      because that window is the one time this app needs the CPU while the screen is off.
+    -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
     <!--

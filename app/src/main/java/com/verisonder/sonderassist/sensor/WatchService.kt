@@ -16,6 +16,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
+import android.os.PowerManager
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -72,6 +73,22 @@ class WatchService : Service(), SensorEventListener {
      * it back. Null when nothing is pending, which is almost always.
      */
     private var tetherPending: Runnable? = null
+
+    /**
+     * Keeps the CPU up for the length of the countdown.
+     *
+     * **A posted delay does not wake a sleeping phone.** `Handler.postDelayed` puts a
+     * message on a queue; it does not hold the device awake and it does not set an alarm,
+     * so with the screen off the message waits for something else to wake the CPU. The
+     * grab detector never met this because it only ever runs while the screen is on. The
+     * strap is the opposite case by design — the phone is in a pocket, dark and asleep,
+     * which is exactly when it gets taken — and a thirty-second countdown that lands
+     * whenever the phone next happens to stir is not a countdown.
+     *
+     * Bounded by the grace itself, five minutes at the very most, and released the moment
+     * it is either acted on or taken back.
+     */
+    private var tetherWake: PowerManager.WakeLock? = null
 
     private val screenEvents = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -328,12 +345,32 @@ class WatchService : Service(), SensorEventListener {
         // Recorded now rather than when it fires, because the interesting case is the one
         // that never fires and would otherwise leave no trace at all.
         Settings.noteAlert(this, "the strap disconnected", fresh = true)
+        val seconds = Settings.tetherGraceSeconds(this)
+        // Acquired before the delay is posted, not after: between the two the phone is
+        // already free to go back to sleep.
+        tetherWake = runCatching {
+            getSystemService(PowerManager::class.java)
+                .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "SonderAssist:strap")
+                .apply {
+                    setReferenceCounted(false)
+                    // A timeout as well as an explicit release. If anything below throws
+                    // or the service is killed mid-countdown, the phone is not left awake
+                    // with no one holding the other end.
+                    acquire(seconds * 1000L + 5_000L)
+                }
+        }.getOrNull()
         val task = Runnable {
             tetherPending = null
             fire("the strap did not come back", quiet = true)
+            releaseTetherWake()
         }
         tetherPending = task
-        tetherHandler.postDelayed(task, Settings.tetherGraceSeconds(this) * 1000L)
+        tetherHandler.postDelayed(task, seconds * 1000L)
+    }
+
+    private fun releaseTetherWake() {
+        runCatching { tetherWake?.takeIf { it.isHeld }?.release() }
+        tetherWake = null
     }
 
     private fun cancelTether(returned: Boolean) {
@@ -342,6 +379,7 @@ class WatchService : Service(), SensorEventListener {
             if (returned) Settings.noteAlert(this, "the strap came back, standing down")
         }
         tetherPending = null
+        releaseTetherWake()
     }
 
     /**
