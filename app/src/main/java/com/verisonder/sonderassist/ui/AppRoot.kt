@@ -124,6 +124,7 @@ fun AppRoot(activity: ComponentActivity) {
     var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
     var strapVibrate by remember { mutableStateOf(Settings.strapVibrate(activity)) }
+    var strapMessage by remember { mutableStateOf(Settings.strapMessage(activity)) }
     var strapDelay by remember { mutableIntStateOf(Settings.strapDelaySeconds(activity)) }
     var paired by remember { mutableStateOf(pairedDevices(activity)) }
     var connected by remember { mutableStateOf(Settings.connectedSet(activity)) }
@@ -510,6 +511,24 @@ fun AppRoot(activity: ComponentActivity) {
                         valueRange = 0f..300f,
                     )
 
+                    Spacer(Modifier.height(8.dp))
+                    Text("Message on a strap alert", style = MaterialTheme.typography.bodyLarge)
+                    OutlinedTextField(
+                        value = strapMessage,
+                        onValueChange = {
+                            strapMessage = it.take(200)
+                            Settings.setStrapMessage(activity, strapMessage)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        minLines = 2,
+                    )
+                    Text(
+                        "Leave it blank for nothing at all. Separate from the grab message.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
