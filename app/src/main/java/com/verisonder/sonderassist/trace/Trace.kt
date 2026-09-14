@@ -9,21 +9,16 @@ import com.verisonder.sonderassist.detect.Sample
  * chosen by reasoning about the physics are a starting point and nothing more; the only
  * way to know whether 450 m/s³ separates a grab from a pocket is to record both and look.
  *
- * One record per line, space separated, because the fields are fixed and numeric and will
- * never nest, and a format small enough to read in one sitting is worth more than a
+ * One record per line, space separated, because there are seven fixed numeric fields that
+ * will never nest and a format small enough to read in one sitting is worth more than a
  * familiar one. A header line carries the label so a file is self-describing when it turns
  * up in a folder a year later.
  *
  * ```
  * SATRACE1 <label>
- * <timestampNs> <ax> <ay> <az> <gx> <gy> <gz> <covered>
+ * <timestampNs> <ax> <ay> <az> <gx> <gy> <gz>
  * ...
  * ```
- *
- * `covered` is 1 or 0 and was added after the pocket problem: a trace of a phone going
- * into a pocket without it records the motion and throws away the one field that decides
- * the verdict. The magic is unchanged because both directions still read — an older file
- * has no eighth column and parses as not covered, which is what it was.
  *
  * Timestamps are the sensor's own monotonic clock, kept raw rather than rebased to zero,
  * so a trace can be lined up against anything else recorded in the same session.
@@ -45,8 +40,7 @@ object Trace {
             append(s.az); append(' ')
             append(s.gx); append(' ')
             append(s.gy); append(' ')
-            append(s.gz); append(' ')
-            append(if (s.covered) '1' else '0')
+            append(s.gz)
             append('\n')
         }
     }
@@ -73,10 +67,6 @@ object Trace {
                     gx = f[4].toFloat(),
                     gy = f[5].toFloat(),
                     gz = f[6].toFloat(),
-                    // Absent in traces recorded before the pocket guard existed. Those
-                    // were all recorded with the phone in the open, so false is not a
-                    // fallback but the truth about them.
-                    covered = f.getOrNull(7) == "1",
                 )
             )
         }

@@ -44,7 +44,6 @@ class WatchService : Service(), SensorEventListener {
     private lateinit var sensors: SensorManager
     private var accelerometer: Sensor? = null
     private var gyroscope: Sensor? = null
-    private var proximitySensor: Sensor? = null
 
     // Rebuilt from the sensitivity setting each time the watch starts, so a change on
     // the slider takes effect the next time the phone is unlocked rather than needing
@@ -58,13 +57,6 @@ class WatchService : Service(), SensorEventListener {
     private var gx = 0f
     private var gy = 0f
     private var gz = 0f
-
-    // Something against the front of the phone. Held the same way as the gyroscope, but
-    // for a different reason: proximity is an on-change sensor and reports nothing at all
-    // while the state holds, so the last reading is the current state rather than a
-    // stale one. It starts false and is cleared on every stop, because a "near" left over
-    // from the last session would blind the detector for the whole of the next one.
-    private var covered = false
 
     private val tetherHandler = Handler(Looper.getMainLooper())
 
@@ -175,7 +167,6 @@ class WatchService : Service(), SensorEventListener {
         sensors = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         accelerometer = sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
         gyroscope = sensors.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-        proximitySensor = sensors.getDefaultSensor(Sensor.TYPE_PROXIMITY)
 
         // A device with no gyroscope needs no special tuning. Rotation only ever lowers
         // the bar, so a device that reports none simply holds every grab to the higher
@@ -231,9 +222,6 @@ class WatchService : Service(), SensorEventListener {
     private fun startListening() {
         if (listening) return
         val accel = accelerometer ?: return
-        // Cleared before anything is registered. Proximity only reports on change, so a
-        // "near" carried over from the last session would sit there unrefuted.
-        covered = false
         detector = SnatchDetector(
             SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this)).copy(
                 // Negative infinity is the gate open: no gravity reading is below it, so
@@ -251,17 +239,12 @@ class WatchService : Service(), SensorEventListener {
         // rate buys nothing at this scale and costs battery for the whole session.
         sensors.registerListener(this, accel, SensorManager.SENSOR_DELAY_GAME)
         gyroscope?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
-        // NORMAL, not GAME. Proximity is on-change: it delivers the current state once at
-        // registration and then only when it flips, so asking for a fast rate buys
-        // nothing and the delay argument is close to meaningless for it.
-        proximitySensor?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_NORMAL) }
         listening = true
     }
 
     private fun stopListening() {
         if (!listening) return
         sensors.unregisterListener(this)
-        covered = false
         listening = false
     }
 
@@ -275,15 +258,6 @@ class WatchService : Service(), SensorEventListener {
                 gz = event.values[2]
             }
 
-            Sensor.TYPE_PROXIMITY -> {
-                // The convention is "anything below the sensor's own maximum is near",
-                // and most phones report exactly two values. Capped at 5 cm as well
-                // because a sensor declaring a large range would otherwise call an arm's
-                // length near and switch the detector off wherever the phone went.
-                val near = minOf(event.sensor.maximumRange, PROXIMITY_NEAR_CM)
-                covered = event.values[0] < near
-            }
-
             Sensor.TYPE_ACCELEROMETER -> {
                 val verdict = detector.accept(
                     Sample(
@@ -292,7 +266,6 @@ class WatchService : Service(), SensorEventListener {
                         ay = event.values[1],
                         az = event.values[2],
                         gx = gx, gy = gy, gz = gz,
-                        covered = covered,
                     )
                 )
                 lastVerdict = when (verdict) {
@@ -604,9 +577,6 @@ class WatchService : Service(), SensorEventListener {
         private const val NOTIFICATION_ID = 1
         private const val ALERT_CHANNEL_ID = "alert"
         private const val ALERT_NOTIFICATION_ID = 2
-
-        /** Centimetres. Anything closer than this counts as something covering the front. */
-        private const val PROXIMITY_NEAR_CM = 5f
 
         /**
          * Two short knocks and a long one, twice over. Deliberately not a pattern any
