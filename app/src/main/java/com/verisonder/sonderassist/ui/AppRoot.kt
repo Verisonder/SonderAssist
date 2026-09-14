@@ -123,6 +123,8 @@ fun AppRoot(activity: ComponentActivity) {
     var tether by remember { mutableStateOf(Settings.tetherEnabled(activity)) }
     var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
+    var strapVibrate by remember { mutableStateOf(Settings.strapVibrate(activity)) }
+    var strapDelay by remember { mutableIntStateOf(Settings.strapDelaySeconds(activity)) }
     var paired by remember { mutableStateOf(pairedDevices(activity)) }
     var connected by remember { mutableStateOf(Settings.connectedSet(activity)) }
     var strapNote by remember { mutableStateOf(Settings.strapNote(activity)) }
@@ -362,18 +364,15 @@ fun AppRoot(activity: ComponentActivity) {
                         .forSensitivity(sensitivity)
                 }
                 Text(
-                    "The pull has to start suddenly — an acceleration of %,.0f, or %,.0f "
-                        .format(tuned.axialJerk, tuned.axialJerkWithRotation) +
-                        "if the phone twists as it goes.",
+                    "Needs a jerk of %,.0f, or %,.0f with a twist."
+                        .format(tuned.axialJerk, tuned.axialJerkWithRotation),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Text(
                     // That figure alone is not enough: it is a rate of change, and
                     // flicking the edge of a still phone produces a large one while
                     // moving nothing.
-                    "And the phone has to actually move with it — at least %.1f m/s² "
-                        .format(tuned.minAxialAccel) +
-                        "toward the top edge, not just a knock.",
+                    "And at least %.1f m/s² toward the top edge.".format(tuned.minAxialAccel),
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(6.dp))
@@ -398,13 +397,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Lock if the strap goes away", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Pick a device you wear. If it disconnects and does not come " +
-                                "back, the phone locks — silently. No message, no sound, " +
-                                "and the screen is not woken. The next time you turn the " +
-                                "screen on the alert is waiting, and it has to be " +
-                                "dismissed the same way any other one does. The location " +
-                                "goes out and the power menu is closed exactly as after " +
-                                "a grab.",
+                            "Locks silently if it disconnects and stays gone. No message, no sound, screen stays off.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -436,10 +429,7 @@ fun AppRoot(activity: ComponentActivity) {
                         // answers, so both ways out are offered rather than making the
                         // person work out which one they are in.
                         Text(
-                            "Nothing to choose from yet. Either this app has not been " +
-                                "allowed to see your devices, or the watch is not paired " +
-                                "with the phone. The list fills in by itself when you " +
-                                "come back.",
+                            "Not allowed to see your devices, or nothing is paired yet.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Spacer(Modifier.height(4.dp))
@@ -508,9 +498,7 @@ fun AppRoot(activity: ComponentActivity) {
                         style = MaterialTheme.typography.bodyLarge,
                     )
                     Text(
-                        "Bluetooth drops for reasons that are not theft and almost all of " +
-                            "them come back within a few seconds. If it reconnects inside " +
-                            "this, nothing happens at all.",
+                        "A reconnect inside this is ignored.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Slider(
@@ -519,7 +507,45 @@ fun AppRoot(activity: ComponentActivity) {
                         onValueChangeFinished = {
                             Settings.setTetherGraceSeconds(activity, tetherGrace)
                         },
-                        valueRange = 5f..300f,
+                        valueRange = 0f..300f,
+                    )
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Buzz when the strap fires", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                "The only sign you get, since nothing else shows.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = strapVibrate,
+                            onCheckedChange = {
+                                strapVibrate = it
+                                Settings.setStrapVibrate(activity, it)
+                            },
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Send the location after $strapDelay seconds",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Text(
+                        "Separate from the grab setting. Needs the location report on.",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Slider(
+                        value = strapDelay.toFloat(),
+                        onValueChange = { strapDelay = it.toInt() },
+                        onValueChangeFinished = {
+                            Settings.setStrapDelaySeconds(activity, strapDelay)
+                        },
+                        valueRange = 0f..600f,
                     )
 
                     Spacer(Modifier.height(12.dp))
@@ -551,10 +577,7 @@ fun AppRoot(activity: ComponentActivity) {
                         // Said outright, because an empty list is the finding and an
                         // absence reads as nothing having happened rather than as an
                         // answer.
-                        "It should say it is listening as soon as this screen is open. " +
-                            "If it does and a device going off still adds nothing, the " +
-                            "phone is not telling this app about Bluetooth — and neither " +
-                            "the wait nor the device you picked was ever the problem.",
+                        "It should say listening whenever this screen is open.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -574,8 +597,7 @@ fun AppRoot(activity: ComponentActivity) {
                 Text(
                     // Worth saying once, plainly: this is shown over the keyguard, which
                     // is the point and also the risk.
-                    "Anyone holding the phone can read this without unlocking it. Do not " +
-                        "put anything private here.",
+                    "Readable without unlocking. Nothing private.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -614,17 +636,12 @@ fun AppRoot(activity: ComponentActivity) {
                     // created at all, the other lets it sit over the keyguard. Found the
                     // hard way, after a restart set one back to Deny - the alarm still
                     // sounded and the screen simply never appeared.
-                    "This app needs two permissions under Other permissions, and it " +
-                        "needs both: \u201cOpen new windows while running in the " +
-                        "background\u201d and \u201cShow on Lock screen\u201d. Without " +
-                        "either one the alert screen cannot open over the lock screen - " +
-                        "the alarm still sounds, so it half looks like it is working.",
+                    "Needs both “Open new windows while running in the background” and “Show on Lock screen”.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Restarting the phone can turn them off again. Worth checking " +
-                        "both after a reboot.",
+                    "A reboot can turn them off again.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -637,8 +654,7 @@ fun AppRoot(activity: ComponentActivity) {
                     if (fullScreen) {
                         "Full-screen alerts are allowed."
                     } else {
-                        "Full-screen alerts are not allowed, so the screen cannot open " +
-                            "itself over the lock screen. The alarm still sounds."
+                        "Not allowed, so the alert cannot open itself. The alarm still sounds."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                     color = if (fullScreen) {
@@ -672,10 +688,7 @@ fun AppRoot(activity: ComponentActivity) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            "The assistant can open over the lock screen on a long press " +
-                                "of the power button, and it covers the alert. This puts " +
-                                "the screen out again and brings the alert back. Up to " +
-                                "five times, then it stops.",
+                            "The assistant can cover the alert. This locks again and brings it back, up to five times.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -699,12 +712,7 @@ fun AppRoot(activity: ComponentActivity) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            "A phone goes into a pocket top edge first, so pushing it " +
-                                "down is a push toward its own top edge — the same signal " +
-                                "as a hand taking it, which is why no sensitivity setting " +
-                                "stops it. This ignores one that happens while the phone " +
-                                "is turned over. Nobody is holding a phone upside down " +
-                                "when it is taken off them.",
+                            "A phone goes into a pocket top edge first, which looks like a grab. This ignores those.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -725,11 +733,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Buzz when it fires", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Two short and one long, twice over, the moment the screen " +
-                                "locks. It " +
-                                "goes out as an alarm, so it still arrives on a phone " +
-                                "kept silent or on Do Not Disturb — and it arrives before " +
-                                "the alarm sound does.",
+                            "Goes out as an alarm, so it arrives on a silent phone.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -754,9 +758,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Text(
                         // Said outright, because the absence of a line is the finding and
                         // an absence is easy to read straight past.
-                        "If the last line is not the alert screen opening, the " +
-                            "screen never appeared, and one of the two permissions " +
-                            "above is almost always why.",
+                        "If the last line is not the screen opening, it never appeared.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -778,8 +780,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("After a theft", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "If the phone is not unlocked in time, its position goes out " +
-                                "by text message and as a live pin in a Telegram group.",
+                            "Position goes out by text and as a live Telegram pin.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -805,10 +806,7 @@ fun AppRoot(activity: ComponentActivity) {
                         Spacer(Modifier.height(12.dp))
                         Text(
                             // The reason the delay is short, said where the slider is.
-                            "Holding the power button for about ten seconds switches the " +
-                                "phone off, and nothing in software can stop that. " +
-                                "Whatever is sent has to be sent before then, so this " +
-                                "wait is deliberately short.",
+                            "Ten seconds on the power button ends everything, so keep this short.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -843,8 +841,7 @@ fun AppRoot(activity: ComponentActivity) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            "The pin carries no words, so the battery goes out as a " +
-                                "message of its own next to it.",
+                            "The pin has no words, so the battery goes out separately.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Slider(
@@ -858,8 +855,7 @@ fun AppRoot(activity: ComponentActivity) {
                         )
 
                         Text(
-                            "The Telegram pin keeps moving until you stop it. Only the " +
-                                "texts are counted, because each one is a real message.",
+                            "The pin runs until stopped. Only texts are counted.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -900,9 +896,7 @@ fun AppRoot(activity: ComponentActivity) {
                         }) { Text("Save Telegram") }
 
                         Text(
-                            "Paste the id, the web.telegram.org link, or a markdown link " +
-                                "- the number is taken out of it. A public channel's @name " +
-                                "works too.",
+                            "Id, web.telegram.org link, or @name.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -916,18 +910,14 @@ fun AppRoot(activity: ComponentActivity) {
                             reportNote = Settings.reportNote(activity)
                         }) { Text("Check all of this") }
                         Text(
-                            "Sends a real message to the group and reads back every " +
-                                "permission. The result appears below - reopen this screen " +
-                                "if the Telegram lines have not arrived yet.",
+                            "Sends a real message and checks every permission.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
 
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "Location must be allowed all the time, not only while the " +
-                                "app is open - a theft is never while the app is open. " +
-                                "Grant it in the app's permissions.",
+                            "Location must be allowed all the time, not only while the app is open.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -942,8 +932,7 @@ fun AppRoot(activity: ComponentActivity) {
                             Text(
                                 // Said plainly: on a phone that has been taken this button
                                 // cannot be reached, and unlocking is what stops it.
-                                "Unlocking the phone stops this on its own. This button " +
-                                    "is for when it is back in your hands.",
+                                "Unlocking stops it anyway. This is for when it is back.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
@@ -979,9 +968,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Column(modifier = Modifier.weight(1f)) {
                         Text("Close it during a theft", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Power and volume up, and holding power, stop opening the " +
-                                "menu once the phone has locked itself. Unlocking puts " +
-                                "them back.",
+                            "Power and volume up, and holding power, stop opening the menu once locked. Unlocking puts them back.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -1002,12 +989,9 @@ fun AppRoot(activity: ComponentActivity) {
                             // something outside the app, and a protection that has
                             // quietly stopped is worse than one that is honestly off.
                             if (shizuku) {
-                                "Shizuku is running. Note that it has to be started " +
-                                    "again after every reboot, and this does nothing " +
-                                    "while it is not."
+                                "Shizuku has to be started again after every reboot."
                             } else {
-                                "Shizuku is not running, so this will not happen. Start " +
-                                    "it and grant SonderAssist, then come back."
+                                "Shizuku is not running. Start it and grant SonderAssist."
                             },
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1021,16 +1005,13 @@ fun AppRoot(activity: ComponentActivity) {
                         if (suppressed) {
                             Spacer(Modifier.height(8.dp))
                             Text(
-                                "The power menu is closed right now. Unlocking, " +
-                                    "restarting the phone, or opening this app all put " +
-                                    "it back.",
+                                "Unlocking, a restart, or opening this app put it back.",
                                 style = MaterialTheme.typography.bodyMedium,
                             )
                         }
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "Holding power for about ten seconds still restarts the " +
-                                "phone. That is below Android and nothing can stop it.",
+                            "Holding power ten seconds still restarts the phone. Nothing can stop that.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1052,10 +1033,7 @@ fun AppRoot(activity: ComponentActivity) {
                             style = MaterialTheme.typography.bodyLarge,
                         )
                         Text(
-                            "Your message on a dark screen, and its own sound, " +
-                                "played once. Two fingers tapped once, then two " +
-                                "fingers up, then one finger left to right, clears " +
-                                "the screen and stops the sound.",
+                            "Your message on a dark screen, with its own sound.\nTwo-finger tap, two fingers up, one finger across clears it.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
@@ -1080,8 +1058,7 @@ fun AppRoot(activity: ComponentActivity) {
                         Text(
                             // Said plainly rather than left to be discovered: the gesture
                             // is not a PIN and the phone cannot check who made it.
-                            "Anyone who knows the gesture can clear it without unlocking " +
-                                "the phone. Unlocking still works.",
+                            "Anyone who knows the gesture can clear it. Unlocking still works.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1117,8 +1094,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Column {
                         Spacer(Modifier.height(16.dp))
                         Text(
-                            "J.A.R.V.I.S mode is using its own sound, played once. Turn " +
-                                "the mode off to choose a sound or a repeat count.",
+                            "J.A.R.V.I.S mode uses its own sound. Turn it off to choose one.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1174,8 +1150,7 @@ fun AppRoot(activity: ComponentActivity) {
                         Text(
                             // The reason this exists, in the person's terms rather than
                             // the detector's.
-                            "The screen locks straight away. The sound waits, so you can " +
-                                "unlock a false alarm before it makes a noise.",
+                            "The lock is instant. The sound waits, so a false alarm can be unlocked first.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                         Slider(
@@ -1197,8 +1172,7 @@ fun AppRoot(activity: ComponentActivity) {
                     if (batteryExempt) {
                         "Battery optimisation is off for SonderAssist."
                     } else {
-                        "Android may stop SonderAssist to save battery. It only runs " +
-                            "while the screen is on, so the cost is small."
+                        "Android may stop SonderAssist to save battery."
                     },
                     style = MaterialTheme.typography.bodyMedium,
                 )
@@ -1215,8 +1189,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Text(
                         // On several skins this is what actually decides whether the
                         // alert screen is allowed to open from the background.
-                        "The alert screen may not appear unless SonderAssist can draw " +
-                            "over other apps. The lock and the sound work either way.",
+                        "Without it the alert may not appear. The lock and the sound still work.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -1242,9 +1215,7 @@ fun AppRoot(activity: ComponentActivity) {
                         // No API exists to read or request this, so the app cannot say
                         // whether it is already on. Pretending to know would be worse
                         // than admitting it does not.
-                        "This phone also has its own autostart list. SonderAssist cannot " +
-                            "see whether it is on, so it is worth checking by hand — " +
-                            "without it the app will not come back after a restart.",
+                        "Check the phone’s own autostart list by hand, or it will not come back after a restart.",
                         style = MaterialTheme.typography.bodyMedium,
                     )
                     Spacer(Modifier.height(8.dp))
@@ -1285,8 +1256,7 @@ fun AppRoot(activity: ComponentActivity) {
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    "Android will not let you uninstall SonderAssist while it can lock " +
-                        "the screen. Remove that permission first, then uninstall normally.",
+                    "Remove the lock permission first, then uninstall normally.",
                     style = MaterialTheme.typography.bodyMedium,
                 )
                 Spacer(Modifier.height(8.dp))
@@ -1325,8 +1295,7 @@ fun AppRoot(activity: ComponentActivity) {
             title = { Text("Remove permission?") },
             text = {
                 Text(
-                    "SonderAssist will stop watching and will not be able to lock the " +
-                        "screen. You can give the permission back at any time."
+                    "SonderAssist will stop watching and cannot lock the screen."
                 )
             },
             confirmButton = {
