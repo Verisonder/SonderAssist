@@ -43,6 +43,7 @@ object Settings {
     private const val TETHER_NAME = "tether_name"
     private const val TETHER_GRACE = "tether_grace"
     private const val STRAP_NOTE = "strap_note"
+    private const val TYPE_SPEED = "type_speed"
     private const val STRAP_MESSAGE = "strap_message"
     private const val STRAP_VIBRATE = "strap_vibrate"
     private const val STRAP_DELAY = "strap_delay"
@@ -327,6 +328,20 @@ object Settings {
     }
 
     const val DEFAULT_STRAP_MESSAGE = "Wait for the owner to come back"
+
+    /**
+     * Milliseconds between letters as the message types itself out. Zero is off.
+     *
+     * Under about 20 it stops reading as typing and becomes a slow paint; over 80 it is
+     * just a wait. The default sits where it looks deliberate.
+     */
+    const val DEFAULT_TYPE_SPEED = 45
+
+    fun typeSpeedMs(context: Context): Int = of(context).getInt(TYPE_SPEED, DEFAULT_TYPE_SPEED)
+
+    fun setTypeSpeedMs(context: Context, value: Int) {
+        of(context).edit().putInt(TYPE_SPEED, value.coerceIn(0, 150)).apply()
+    }
 
     /**
      * What a strap alert shows, separate from the grab message.

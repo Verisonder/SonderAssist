@@ -125,6 +125,7 @@ fun AppRoot(activity: ComponentActivity) {
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
     var strapVibrate by remember { mutableStateOf(Settings.strapVibrate(activity)) }
     var strapMessage by remember { mutableStateOf(Settings.strapMessage(activity)) }
+    var typeSpeed by remember { mutableIntStateOf(Settings.typeSpeedMs(activity)) }
     var strapDelay by remember { mutableIntStateOf(Settings.strapDelaySeconds(activity)) }
     var paired by remember { mutableStateOf(pairedDevices(activity)) }
     var connected by remember { mutableStateOf(Settings.connectedSet(activity)) }
@@ -605,6 +606,23 @@ fun AppRoot(activity: ComponentActivity) {
                 }
 
                 if (onSettings) {
+                Text(
+                    if (typeSpeed == 0) "No typing effect" else "Type it out at $typeSpeed ms a letter",
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+                Text(
+                    "Both messages. Drag to nought for all at once.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Slider(
+                    value = typeSpeed.toFloat(),
+                    onValueChange = { typeSpeed = it.toInt() },
+                    onValueChangeFinished = { Settings.setTypeSpeedMs(activity, typeSpeed) },
+                    valueRange = 0f..150f,
+                )
+
+                Spacer(Modifier.height(16.dp))
                 SectionLabel("Message on the lock screen")
                 OutlinedTextField(
                     value = message,
