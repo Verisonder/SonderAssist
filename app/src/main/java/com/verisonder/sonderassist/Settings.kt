@@ -37,6 +37,7 @@ object Settings {
     private const val REPORT_NOTE = "report_note"
     private const val REPORT_RUNNING = "report_running"
     private const val ALERT_LIVE = "alert_live"
+    private const val UPRIGHT_GUARD = "upright_guard"
     private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
@@ -197,6 +198,20 @@ object Settings {
 
     fun setGuardAlert(context: Context, value: Boolean) {
         of(context).edit().putBoolean(GUARD_ALERT, value).apply()
+    }
+
+    /**
+     * Ignore a transient while the phone is upside down.
+     *
+     * Off until asked for, like everything else optional here. It is the answer to the
+     * pocket firing — the phone goes in top edge first, so the shove down the pocket is a
+     * shove toward its own top edge and reads as a grab — but it is still a rule about
+     * when not to fire, and this app does not start refusing to fire on its own.
+     */
+    fun uprightGuard(context: Context): Boolean = of(context).getBoolean(UPRIGHT_GUARD, false)
+
+    fun setUprightGuard(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(UPRIGHT_GUARD, value).apply()
     }
 
     /**

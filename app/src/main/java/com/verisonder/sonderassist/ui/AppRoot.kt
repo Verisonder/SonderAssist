@@ -90,6 +90,7 @@ fun AppRoot(activity: ComponentActivity) {
     var alertNote by remember { mutableStateOf(Settings.alertNote(activity)) }
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
     var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
+    var uprightGuard by remember { mutableStateOf(Settings.uprightGuard(activity)) }
     var vibrateOnAlert by remember { mutableStateOf(Settings.vibrateOnAlert(activity)) }
     var report by remember { mutableStateOf(Settings.reportEnabled(activity)) }
     var smsNumber by remember { mutableStateOf(Settings.smsNumber(activity)) }
@@ -465,11 +466,41 @@ fun AppRoot(activity: ComponentActivity) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Ignore it while the phone is upside down",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+                        Text(
+                            "A phone goes into a pocket top edge first, so pushing it " +
+                                "down is a push toward its own top edge — the same signal " +
+                                "as a hand taking it, which is why no sensitivity setting " +
+                                "stops it. This ignores one that happens while the phone " +
+                                "is turned over. Nobody is holding a phone upside down " +
+                                "when it is taken off them.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = uprightGuard,
+                        onCheckedChange = {
+                            uprightGuard = it
+                            Settings.setUprightGuard(activity, it)
+                        },
+                    )
+                }
+
+                Spacer(Modifier.height(16.dp))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
                         Text("Buzz when it fires", style = MaterialTheme.typography.bodyLarge)
                         Text(
                             "Three short and one long, the moment the screen locks. It " +
-                                "arrives before the alarm does and through a pocket, so " +
-                                "you know it happened either way.",
+                                "goes out as an alarm, so it still arrives on a phone " +
+                                "kept silent or on Do Not Disturb — and it arrives before " +
+                                "the alarm sound does.",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }

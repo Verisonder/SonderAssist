@@ -113,10 +113,17 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val freeFallMs: Long = 120,
         val windowMs: Long = 900,
         val heldLagMs: Long = 250,
-        val uprightMinGravityY: Float = -4.9f,
+        val uprightMinGravityY: Float = UPSIDE_DOWN_Y,
         val gravityAlpha: Float = 0.98f,
     ) {
         companion object {
+            /**
+             * The top edge more than thirty degrees below horizontal. Held here so the
+             * service and the fixtures name the same number rather than each carrying a
+             * copy of it.
+             */
+            const val UPSIDE_DOWN_Y = -4.9f
+
             /**
              * Turn one slider into a set of thresholds.
              *

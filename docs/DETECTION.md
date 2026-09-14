@@ -88,6 +88,9 @@ inverted when it is snatched. So a transient is ignored while the gravity estima
 below `uprightMinGravityY` on Y, which is −4.9: the top edge more than thirty degrees
 below horizontal. A phone held flat in an open palm reads near zero on Y and is untouched.
 
+**Off by default**, under "Ignore it while the phone is upside down". It is still a rule
+about when *not* to fire, and this app does not start refusing to fire on its own.
+
 **Sign, since it is now load-bearing.** The accelerometer reports +9.81 along whichever
 axis points up, so a phone held the right way up reads positive on Y. The fixtures modelled
 rest at −8.5 and called it "gravity along −Y" — the gravity vector, not the reading. It
