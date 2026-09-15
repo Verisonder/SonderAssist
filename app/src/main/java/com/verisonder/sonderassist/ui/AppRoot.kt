@@ -153,7 +153,9 @@ fun AppRoot(activity: ComponentActivity) {
     var hasLock by remember { mutableStateOf(DeviceAdminLocker.hasLockScreen(activity)) }
     // Read from the service, not from a local flag. The old screen kept its own boolean
     // that reset on every recomposition, so it could claim to be off while running.
-    var watching by remember { mutableStateOf(WatchService.isRunning) }
+    var watching by remember { mutableStateOf(WatchService.watching(activity)) }
+    // Separate from watching. The strap only needs the service, not the watch.
+    var serviceUp by remember { mutableStateOf(WatchService.isRunning) }
 
     var sensitivity by remember { mutableFloatStateOf(Settings.sensitivity(activity)) }
     var alarmOn by remember { mutableStateOf(Settings.alarmEnabled(activity)) }
@@ -213,7 +215,7 @@ fun AppRoot(activity: ComponentActivity) {
             if (event == Lifecycle.Event.ON_RESUME) {
                 granted = DeviceAdminLocker.isReady(activity)
                 hasLock = DeviceAdminLocker.hasLockScreen(activity)
-                watching = WatchService.isRunning
+                watching = WatchService.watching(activity)
                 batteryExempt = Keepalive.isBatteryExempt(activity)
                 canOverlay = AndroidSettings.canDrawOverlays(activity)
                 // The third and last guard. If the service was killed while the power
@@ -238,6 +240,7 @@ fun AppRoot(activity: ComponentActivity) {
                 // strap on before this existed never got one — and the screen said
                 // nothing, because there was nothing to say it with.
                 runCatching { WatchService.sync(activity) }
+                serviceUp = WatchService.isRunning
                 connected = Settings.connectedSet(activity)
                 strapNote = Settings.strapNote(activity)
                 tileNote = Settings.tileNote(activity)
@@ -326,11 +329,8 @@ fun AppRoot(activity: ComponentActivity) {
                 StatusCard(
                     watching = watching,
                     onToggle = {
-                        if (watching) WatchService.stop(activity) else WatchService.start(activity)
                         watching = !watching
-                        // The recorded intent, which is what the boot receiver reads. The
-                        // service being killed is not the person changing their mind.
-                        Settings.setArmed(activity, watching)
+                        WatchService.setWatching(activity, watching)
                     },
                 )
 
@@ -412,6 +412,8 @@ fun AppRoot(activity: ComponentActivity) {
                             // able to start it. It used to depend on the watch being on
                             // and said nothing about it.
                             WatchService.sync(activity)
+                            // isRunning lags the request, so paint what was asked for.
+                            serviceUp = watching || (it && tetherAddress.isNotEmpty())
                             if (it) {
                                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                                     askBluetooth.launch(
@@ -466,6 +468,7 @@ fun AppRoot(activity: ComponentActivity) {
                                         Settings.setTether(activity, address, name)
                                         tetherAddress = address
                                         WatchService.sync(activity)
+                                        serviceUp = true
                                     }
                                     .padding(vertical = 8.dp),
                                 verticalAlignment = Alignment.CenterVertically,
@@ -476,6 +479,7 @@ fun AppRoot(activity: ComponentActivity) {
                                         Settings.setTether(activity, address, name)
                                         tetherAddress = address
                                         WatchService.sync(activity)
+                                        serviceUp = true
                                     },
                                 )
                                 Column(modifier = Modifier.weight(1f)) {
@@ -570,15 +574,15 @@ fun AppRoot(activity: ComponentActivity) {
 
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        if (watching) {
-                            "Running. The strap is listening."
-                        } else if (tetherAddress.isEmpty()) {
+                        if (tetherAddress.isEmpty()) {
                             "Not running — no device chosen yet."
+                        } else if (serviceUp) {
+                            "Running. The strap is listening."
                         } else {
                             "Not running. Nothing can reach the strap in this state."
                         },
                         style = MaterialTheme.typography.bodyLarge,
-                        color = if (watching) {
+                        color = if (serviceUp && tetherAddress.isNotEmpty()) {
                             MaterialTheme.colorScheme.onSurface
                         } else {
                             MaterialTheme.colorScheme.error
@@ -1338,9 +1342,11 @@ fun AppRoot(activity: ComponentActivity) {
             confirmButton = {
                 TextButton(onClick = {
                     confirmRemove = false
-                    WatchService.stop(activity)
-                    watching = false
                     Settings.setArmed(activity, false)
+                    // The strap too: without the permission it cannot lock anything.
+                    WatchService.shutDown(activity)
+                    watching = false
+                    serviceUp = false
                     DeviceAdminLocker.deactivate(activity)
                     granted = false
                 }) { Text("Remove") }

@@ -72,9 +72,10 @@ class WatchTileService : TileService() {
             return
         }
 
-        val running = WatchService.isRunning
+        // Armed and running, not merely running: the strap can keep the service up alone.
+        val running = WatchService.watching(this)
         val started = runCatching {
-            if (running) WatchService.stop(this) else WatchService.start(this)
+            WatchService.setWatching(this, !running)
         }.onFailure {
             // A tile is bound by SystemUI, not backed by an activity, so on Android 12
             // and above the platform can refuse a foreground service started from here.
@@ -99,9 +100,7 @@ class WatchTileService : TileService() {
             return
         }
 
-        // The recorded intent, which is what the boot receiver reads. The service being
-        // killed later is not the person changing their mind.
-        Settings.setArmed(this, !running)
+        // The recorded intent is written inside setWatching, before the service is asked.
 
         // Neither the start nor the stop has happened yet. startForegroundService and
         // stopService both queue the work for the main looper, so WatchService.isRunning
@@ -137,7 +136,7 @@ class WatchTileService : TileService() {
      */
     private fun refresh(pending: Boolean? = null) {
         val tile = qsTile ?: return
-        val watching = pending ?: WatchService.isRunning
+        val watching = pending ?: WatchService.watching(this)
         tile.state = when {
             !DeviceAdminLocker.isReady(this) -> Tile.STATE_UNAVAILABLE
             watching -> Tile.STATE_ACTIVE
