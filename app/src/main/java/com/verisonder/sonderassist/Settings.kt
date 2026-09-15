@@ -49,6 +49,7 @@ object Settings {
     private const val STRAP_DELAY = "strap_delay"
     private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
+    private const val DETECTOR = "detector"
     private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
@@ -223,6 +224,18 @@ object Settings {
 
     fun setUprightGuard(context: Context, value: Boolean) {
         of(context).edit().putBoolean(UPRIGHT_GUARD, value).apply()
+    }
+
+    /** Which grab detector runs. */
+    enum class Detector { V1, V2, BOTH }
+
+    /** Defaults to the first detector: the second is a trial until traces say otherwise. */
+    fun detector(context: Context): Detector =
+        runCatching { Detector.valueOf(of(context).getString(DETECTOR, null) ?: "") }
+            .getOrDefault(Detector.V1)
+
+    fun setDetector(context: Context, value: Detector) {
+        of(context).edit().putString(DETECTOR, value.name).apply()
     }
 
     /**

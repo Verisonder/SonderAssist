@@ -25,6 +25,7 @@ import com.verisonder.sonderassist.R
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.detect.Sample
 import com.verisonder.sonderassist.media.Alarm
+import com.verisonder.sonderassist.detect.ImpulseDetector
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.PowerMenu
@@ -48,7 +49,9 @@ class WatchService : Service(), SensorEventListener {
     // Rebuilt from the sensitivity setting each time the watch starts, so a change on
     // the slider takes effect the next time the phone is unlocked rather than needing
     // the service restarted.
-    private var detector = SnatchDetector()
+    // Either may be absent: which ones run follows Settings.detector.
+    private var detector: SnatchDetector? = null
+    private var detector2: ImpulseDetector? = null
     private var listening = false
 
     // The gyroscope arrives on its own schedule, so the latest reading is held and
@@ -135,6 +138,15 @@ class WatchService : Service(), SensorEventListener {
                 ACTION_STAND_DOWN -> {
                     stopListening()
                     repostNotification()
+                }
+
+                // A tuning changed on screen. Rebuild the detectors now rather than at
+                // the next unlock, so a change can be tried the moment it is made.
+                ACTION_RETUNE -> {
+                    if (listening) {
+                        stopListening()
+                        startListening()
+                    }
                 }
 
                 // The alert screen was navigated away from rather than covered - the
@@ -226,6 +238,7 @@ class WatchService : Service(), SensorEventListener {
                 addAction(ACTION_SILENCE)
                 addAction(ACTION_STOP_REPORT)
                 addAction(ACTION_STAND_DOWN)
+                addAction(ACTION_RETUNE)
                 addAction(ACTION_DISMISS)
                 addAction(ACTION_REASSERT)
             },
@@ -270,18 +283,30 @@ class WatchService : Service(), SensorEventListener {
         // switch rather than following whether this service happens to exist.
         if (!Settings.armed(this)) return
         val accel = accelerometer ?: return
-        detector = SnatchDetector(
-            SnatchDetector.Tuning.forSensitivity(Settings.sensitivity(this)).copy(
-                // Negative infinity is the gate open: no gravity reading is below it, so
-                // the comparison can stay one unconditional line in the detector rather
-                // than a flag the hot path has to test as well.
-                uprightMinGravityY = if (Settings.uprightGuard(this)) {
-                    SnatchDetector.Tuning.UPSIDE_DOWN_Y
-                } else {
-                    Float.NEGATIVE_INFINITY
-                }
+        // Negative infinity is the gate open: no gravity reading is below it, so the
+        // comparison can stay one unconditional line in the detector rather than a flag
+        // the hot path has to test as well.
+        val upright = if (Settings.uprightGuard(this)) {
+            SnatchDetector.Tuning.UPSIDE_DOWN_Y
+        } else {
+            Float.NEGATIVE_INFINITY
+        }
+        val which = Settings.detector(this)
+        val sensitivity = Settings.sensitivity(this)
+        detector = if (which != Settings.Detector.V2) {
+            SnatchDetector(
+                SnatchDetector.Tuning.forSensitivity(sensitivity).copy(uprightMinGravityY = upright)
             )
-        )
+        } else {
+            null
+        }
+        detector2 = if (which != Settings.Detector.V1) {
+            ImpulseDetector(
+                ImpulseDetector.Tuning.forSensitivity(sensitivity).copy(uprightMinGravityY = upright)
+            )
+        } else {
+            null
+        }
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
         // rate buys nothing at this scale and costs battery for the whole session.
@@ -307,32 +332,39 @@ class WatchService : Service(), SensorEventListener {
             }
 
             Sensor.TYPE_ACCELEROMETER -> {
-                val verdict = detector.accept(
-                    Sample(
-                        timestampNs = event.timestamp,
-                        ax = event.values[0],
-                        ay = event.values[1],
-                        az = event.values[2],
-                        gx = gx, gy = gy, gz = gz,
-                    )
+                val sample = Sample(
+                    timestampNs = event.timestamp,
+                    ax = event.values[0],
+                    ay = event.values[1],
+                    az = event.values[2],
+                    gx = gx, gy = gy, gz = gz,
                 )
-                lastVerdict = when (verdict) {
-                    is SnatchDetector.Verdict.Idle -> "not in a hand"
-                    is SnatchDetector.Verdict.Watching -> "watching"
-                    is SnatchDetector.Verdict.Candidate ->
-                        "possible grab (acceleration %.0f)".format(verdict.axialJerk)
-                    is SnatchDetector.Verdict.Rejected -> "rejected: ${verdict.reason}"
-                    is SnatchDetector.Verdict.Snatch -> "locked"
-                }
-                if (verdict is SnatchDetector.Verdict.Snatch) {
+                // Both are fed every sample they exist for, and either one firing is a
+                // grab. The readout names each so a disagreement is visible rather than
+                // averaged away.
+                val v1 = detector?.accept(sample)
+                val v2 = detector2?.accept(sample)
+                lastVerdict = listOfNotNull(
+                    v1?.let { "v1 " + words(it, "acceleration %.0f") },
+                    v2?.let { "v2 " + words(it, "push %.2f m/s") },
+                ).joinToString(" · ")
+                if (v1 is SnatchDetector.Verdict.Snatch || v2 is SnatchDetector.Verdict.Snatch) {
                     lastFiredAt = System.currentTimeMillis()
-                    onSnatch()
+                    onSnatch(if (v1 is SnatchDetector.Verdict.Snatch) "v1" else "v2")
                 }
             }
         }
     }
 
-    private fun onSnatch() = fire("detected a grab", quiet = false)
+    private fun onSnatch(by: String) = fire("detected a grab ($by)", quiet = false)
+
+    private fun words(verdict: SnatchDetector.Verdict, measure: String): String = when (verdict) {
+        is SnatchDetector.Verdict.Idle -> "not in a hand"
+        is SnatchDetector.Verdict.Watching -> "watching"
+        is SnatchDetector.Verdict.Candidate -> "possible grab (${measure.format(verdict.axialJerk)})"
+        is SnatchDetector.Verdict.Rejected -> "rejected: ${verdict.reason}"
+        is SnatchDetector.Verdict.Snatch -> "locked"
+    }
 
     // ------------------------------------------------------------------- the strap
 
@@ -755,6 +787,12 @@ class WatchService : Service(), SensorEventListener {
         }
 
         private const val ACTION_STAND_DOWN = "com.verisonder.sonderassist.STAND_DOWN"
+        private const val ACTION_RETUNE = "com.verisonder.sonderassist.RETUNE"
+
+        /** Apply a changed sensitivity or detector choice to a running watch. */
+        fun retune(context: Context) {
+            context.sendBroadcast(Intent(ACTION_RETUNE).setPackage(context.packageName))
+        }
 
         /** Private to this app: the receiver is registered RECEIVER_NOT_EXPORTED. */
         private const val ACTION_SILENCE = "com.verisonder.sonderassist.SILENCE"

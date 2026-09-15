@@ -40,6 +40,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.SegmentedButton
+import androidx.compose.material3.SegmentedButtonDefaults
+import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -120,6 +123,7 @@ fun AppRoot(activity: ComponentActivity) {
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
     var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
     var uprightGuard by remember { mutableStateOf(Settings.uprightGuard(activity)) }
+    var whichDetector by remember { mutableStateOf(Settings.detector(activity)) }
     var tether by remember { mutableStateOf(Settings.tetherEnabled(activity)) }
     var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
@@ -342,6 +346,41 @@ fun AppRoot(activity: ComponentActivity) {
                     )
                 }
 
+                // Which detector. v1 is the jerk detector everything so far was tuned on;
+                // v2 measures the velocity change instead. Both runs them side by side and
+                // either one firing locks, which is how one gets compared with the other
+                // on a real phone rather than in a fixture.
+                Spacer(Modifier.height(24.dp))
+                SectionLabel("Detector")
+                Spacer(Modifier.height(8.dp))
+                val choices = listOf(
+                    Settings.Detector.V1 to "v1",
+                    Settings.Detector.V2 to "v2",
+                    Settings.Detector.BOTH to "Both",
+                )
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    choices.forEachIndexed { index, (which, label) ->
+                        SegmentedButton(
+                            selected = whichDetector == which,
+                            onClick = {
+                                whichDetector = which
+                                Settings.setDetector(activity, which)
+                                WatchService.retune(activity)
+                            },
+                            shape = SegmentedButtonDefaults.itemShape(index, choices.size),
+                        ) { Text(label) }
+                    }
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    when (whichDetector) {
+                        Settings.Detector.V1 -> "The jerk. What every release so far has used."
+                        Settings.Detector.V2 -> "The push. Measures how fast the phone is sent away."
+                        Settings.Detector.BOTH -> "Either one firing locks."
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+
                 Spacer(Modifier.height(32.dp))
                 SectionLabel("Sensitivity")
                 Text(
@@ -355,7 +394,10 @@ fun AppRoot(activity: ComponentActivity) {
                 Slider(
                     value = sensitivity,
                     onValueChange = { sensitivity = it },
-                    onValueChangeFinished = { Settings.setSensitivity(activity, sensitivity) },
+                    onValueChangeFinished = {
+                        Settings.setSensitivity(activity, sensitivity)
+                        WatchService.retune(activity)
+                    },
                     modifier = Modifier.fillMaxWidth(),
                 )
                 // The numbers, not just an adjective. They are what the slider actually
@@ -365,24 +407,31 @@ fun AppRoot(activity: ComponentActivity) {
                     com.verisonder.sonderassist.detect.SnatchDetector.Tuning
                         .forSensitivity(sensitivity)
                 }
-                Text(
-                    "Needs a jerk of %,.0f, or %,.0f with a twist."
-                        .format(tuned.axialJerk, tuned.axialJerkWithRotation),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Text(
-                    // That figure alone is not enough: it is a rate of change, and
-                    // flicking the edge of a still phone produces a large one while
-                    // moving nothing.
-                    "And at least %.1f m/s² toward the top edge.".format(tuned.minAxialAccel),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                Spacer(Modifier.height(6.dp))
-                Text(
-                    "Takes effect the next time you unlock the phone.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (whichDetector != Settings.Detector.V2) {
+                    Text(
+                        "v1 needs a jerk of %,.0f, or %,.0f with a twist."
+                            .format(tuned.axialJerk, tuned.axialJerkWithRotation),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        // That figure alone is not enough: it is a rate of change, and
+                        // flicking the edge of a still phone produces a large one while
+                        // moving nothing.
+                        "And at least %.1f m/s² toward the top edge.".format(tuned.minAxialAccel),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+                if (whichDetector != Settings.Detector.V1) {
+                    val tuned2 = remember(sensitivity) {
+                        com.verisonder.sonderassist.detect.ImpulseDetector.Tuning
+                            .forSensitivity(sensitivity)
+                    }
+                    Text(
+                        "v2 needs a push of %.2f m/s, or %.2f with a twist."
+                            .format(tuned2.minDeltaV, tuned2.minDeltaVWithRotation),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
 
                 // On the home screen and not behind the settings button, because it is
                 // the second of the two ways this app can decide the phone is gone. The
