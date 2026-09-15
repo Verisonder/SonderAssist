@@ -132,7 +132,10 @@ class WatchService : Service(), SensorEventListener {
                 ACTION_STOP_REPORT -> Reporter.stop(this@WatchService)
 
                 // The watch was switched off while the strap still wants the service.
-                ACTION_STAND_DOWN -> stopListening()
+                ACTION_STAND_DOWN -> {
+                    stopListening()
+                    repostNotification()
+                }
 
                 // The alert screen was navigated away from rather than covered - the
                 // home gesture, which no app can block. Nothing needs to go dark for
@@ -250,7 +253,13 @@ class WatchService : Service(), SensorEventListener {
         super.onDestroy()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
+    // A start can arrive while the service is already up for the strap alone. onCreate
+    // does not run again, so this is the only place that turns the sensors on for it.
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        startListening()
+        repostNotification()
+        return START_STICKY
+    }
 
     // ------------------------------------------------------------------- listening
 
@@ -629,11 +638,22 @@ class WatchService : Service(), SensorEventListener {
             )
         )
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(getString(R.string.watch_notification))
+            .setContentTitle(
+                // Says which of the two is keeping it alive, since it can be either.
+                getString(
+                    if (Settings.armed(this)) R.string.watch_notification else R.string.strap_notification
+                )
+            )
             .setSmallIcon(android.R.drawable.ic_lock_idle_lock)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .build()
+    }
+
+    private fun repostNotification() {
+        runCatching {
+            getSystemService(NotificationManager::class.java).notify(NOTIFICATION_ID, notification())
+        }
     }
 
     companion object {
@@ -694,7 +714,7 @@ class WatchService : Service(), SensorEventListener {
          * service now stays up for the strap and merely stops reading the sensors.
          */
         fun stop(context: Context) {
-            if (Settings.tetherEnabled(context) && Settings.tetherAddress(context).isNotEmpty()) {
+            if (strapWanted(context)) {
                 context.sendBroadcast(Intent(ACTION_STAND_DOWN).setPackage(context.packageName))
                 return
             }
@@ -703,13 +723,35 @@ class WatchService : Service(), SensorEventListener {
 
         /** Keep the service alive if anything still needs it, start it if so. */
         fun sync(context: Context) {
-            if (Settings.armed(context) ||
-                (Settings.tetherEnabled(context) && Settings.tetherAddress(context).isNotEmpty())
-            ) {
+            // No point keeping anything alive that cannot lock.
+            if (!DeviceAdminLocker.isReady(context)) {
+                context.stopService(Intent(context, WatchService::class.java))
+            } else if (Settings.armed(context) || strapWanted(context)) {
                 start(context)
             } else {
                 context.stopService(Intent(context, WatchService::class.java))
             }
+        }
+
+        private fun strapWanted(context: Context): Boolean =
+            Settings.tetherEnabled(context) && Settings.tetherAddress(context).isNotEmpty()
+
+        /**
+         * **Watching means armed and running, not just running.** The service can be up for
+         * the strap alone, and reading isRunning as "watching" made the watch impossible to
+         * switch on from the tile and impossible to switch off on screen.
+         */
+        fun watching(context: Context): Boolean = isRunning && Settings.armed(context)
+
+        /** The one way to switch the watch. The intent is written before the service is asked. */
+        fun setWatching(context: Context, on: Boolean) {
+            Settings.setArmed(context, on)
+            if (on) start(context) else stop(context)
+        }
+
+        /** Everything off, strap included. For when the lock permission is being removed. */
+        fun shutDown(context: Context) {
+            context.stopService(Intent(context, WatchService::class.java))
         }
 
         private const val ACTION_STAND_DOWN = "com.verisonder.sonderassist.STAND_DOWN"
