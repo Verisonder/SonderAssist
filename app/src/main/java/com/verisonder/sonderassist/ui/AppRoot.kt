@@ -69,6 +69,7 @@ import com.verisonder.sonderassist.security.Keepalive
 import com.verisonder.sonderassist.security.PowerMenu
 import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.sensor.WatchService
+import com.verisonder.sonderassist.learn.AlertLog
 
 /**
  * One screen.
@@ -124,6 +125,10 @@ fun AppRoot(activity: ComponentActivity) {
     var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
     var uprightGuard by remember { mutableStateOf(Settings.uprightGuard(activity)) }
     var whichDetector by remember { mutableStateOf(Settings.detector(activity)) }
+    var learn by remember { mutableStateOf(Settings.learn(activity)) }
+    var learnCounts by remember { mutableStateOf(AlertLog.counts(activity)) }
+    var learnPending by remember { mutableStateOf(AlertLog.pending(activity)) }
+    var confirmClearLog by remember { mutableStateOf(false) }
     var tether by remember { mutableStateOf(Settings.tetherEnabled(activity)) }
     var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
@@ -230,6 +235,8 @@ fun AppRoot(activity: ComponentActivity) {
                 shizukuAsk = PowerMenu.needsPermission()
                 suppressed = Settings.powerMenuSuppressed(activity)
                 alertNote = Settings.alertNote(activity)
+                learnCounts = AlertLog.counts(activity)
+                learnPending = AlertLog.pending(activity)
                 reportNote = Settings.reportNote(activity)
                 reportRunning = Settings.reportRunning(activity)
                 fullScreen = canUseFullScreen(activity)
@@ -430,6 +437,80 @@ fun AppRoot(activity: ComponentActivity) {
                         "v2 needs a push of %.2f m/s, or %.2f with a twist."
                             .format(tuned2.minDeltaV, tuned2.minDeltaVWithRotation),
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                }
+
+                // The alert log. Every grab alert is written down with the few seconds of
+                // samples that caused it, and the answer to "was it a theft?" goes with
+                // it. Shared as one file, it is what lets the detector be tuned against
+                // real false alarms instead of guessed ones.
+                Spacer(Modifier.height(24.dp))
+                SectionLabel("Learning")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Ask after each alert", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Saves how it fired, to tune it later.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = learn,
+                        onCheckedChange = {
+                            learn = it
+                            Settings.setLearn(activity, it)
+                        },
+                    )
+                }
+                if (learn) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "${learnCounts.falseAlarm} false · ${learnCounts.theft} theft · " +
+                            "${learnCounts.unanswered} unanswered",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    val waiting = learnPending
+                    if (waiting != null) {
+                        Spacer(Modifier.height(8.dp))
+                        Text("Last alert: was it a theft?", style = MaterialTheme.typography.bodyLarge)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = {
+                                AlertLog.label(activity, waiting, AlertLog.THEFT)
+                                learnPending = null
+                                learnCounts = AlertLog.counts(activity)
+                            }) { Text("Theft") }
+                            FilledTonalButton(onClick = {
+                                AlertLog.label(activity, waiting, AlertLog.FALSE)
+                                learnPending = null
+                                learnCounts = AlertLog.counts(activity)
+                            }) { Text("False alarm") }
+                        }
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Button(onClick = { shareAlertLog(activity) }) { Text("Share") }
+                        TextButton(onClick = { confirmClearLog = true }) { Text("Clear") }
+                    }
+                }
+                if (confirmClearLog) {
+                    AlertDialog(
+                        onDismissRequest = { confirmClearLog = false },
+                        title = { Text("Clear the log?") },
+                        text = { Text("Every saved alert is deleted.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                AlertLog.clear(activity)
+                                learnCounts = AlertLog.counts(activity)
+                                learnPending = null
+                                confirmClearLog = false
+                            }) { Text("Clear") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmClearLog = false }) { Text("Cancel") }
+                        },
                     )
                 }
 
@@ -1494,6 +1575,21 @@ private fun Blocker(title: String, detail: String, action: String, onAction: () 
         Text(detail, style = MaterialTheme.typography.bodyLarge)
         Spacer(Modifier.height(20.dp))
         Button(onClick = onAction, modifier = Modifier.fillMaxWidth()) { Text(action) }
+    }
+}
+
+/** Hand the alert log to the share sheet as one text file. */
+private fun shareAlertLog(activity: ComponentActivity) {
+    runCatching {
+        val file = AlertLog.export(activity)
+        val uri = androidx.core.content.FileProvider.getUriForFile(
+            activity, "${activity.packageName}.files", file,
+        )
+        val send = Intent(Intent.ACTION_SEND)
+            .setType("text/plain")
+            .putExtra(Intent.EXTRA_STREAM, uri)
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        activity.startActivity(Intent.createChooser(send, "Share alert log"))
     }
 }
 

@@ -50,6 +50,7 @@ object Settings {
     private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
     private const val DETECTOR = "detector"
+    private const val LEARN = "learn"
     private const val VIBRATE_ON_ALERT = "vibrate_on_alert"
     private const val BLOCK_POWER_MENU = "block_power_menu"
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
@@ -236,6 +237,18 @@ object Settings {
 
     fun setDetector(context: Context, value: Detector) {
         of(context).edit().putString(DETECTOR, value.name).apply()
+    }
+
+    /**
+     * Keep a record of every grab alert and ask afterwards whether it was a theft.
+     *
+     * Off by default, like everything optional. The records stay on the phone in the
+     * app's own storage and only leave it when the person shares the file.
+     */
+    fun learn(context: Context): Boolean = of(context).getBoolean(LEARN, false)
+
+    fun setLearn(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(LEARN, value).apply()
     }
 
     /**

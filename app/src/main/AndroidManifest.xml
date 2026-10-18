@@ -195,6 +195,22 @@
             android:showOnLockScreen="true"
             android:theme="@style/Theme.SonderAssist" />
 
+        <!-- The two buttons on "Was it a theft?". Only this app's own PendingIntent reaches it. -->
+        <receiver
+            android:name=".learn.LabelReceiver"
+            android:exported="false" />
+
+        <!-- Hands the alert log to the share sheet. Reaches the export folder and nothing else. -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
         <!--
             RECEIVE_BOOT_COMPLETED was declared from the first commit with nothing behind
             it, so the app was dead after every reboot until someone opened it.

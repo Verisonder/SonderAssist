@@ -30,6 +30,8 @@ import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.PowerMenu
 import com.verisonder.sonderassist.report.Reporter
+import com.verisonder.sonderassist.learn.AlertLog
+import com.verisonder.sonderassist.learn.AlertRecord
 
 /**
  * Watches the motion sensors while the phone is unlocked and in use.
@@ -60,6 +62,12 @@ class WatchService : Service(), SensorEventListener {
     private var gx = 0f
     private var gy = 0f
     private var gz = 0f
+
+    /**
+     * The last few seconds of samples, kept only for the alert log. Long enough to hold
+     * the run-up to a trigger and the whole confirmation window after it.
+     */
+    private val recent = ArrayDeque<Sample>()
 
     private val tetherHandler = Handler(Looper.getMainLooper())
 
@@ -103,6 +111,10 @@ class WatchService : Service(), SensorEventListener {
                     runCatching { Reporter.stop(context ?: this@WatchService) }
                     // Unlocked, so there is nothing left to put back up.
                     Settings.setAlertLive(this@WatchService, false)
+                    // The owner is back, so this is the moment to ask whether it was real.
+                    if (Settings.learn(this@WatchService)) {
+                        runCatching { AlertLog.askIfPending(this@WatchService) }
+                    }
                     startListening()
                 }
 
@@ -310,6 +322,8 @@ class WatchService : Service(), SensorEventListener {
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
         // rate buys nothing at this scale and costs battery for the whole session.
+        // A fresh session. Samples from before the screen went off are a different moment.
+        recent.clear()
         sensors.registerListener(this, accel, SensorManager.SENSOR_DELAY_GAME)
         gyroscope?.let { sensors.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) }
         listening = true
@@ -339,6 +353,10 @@ class WatchService : Service(), SensorEventListener {
                     az = event.values[2],
                     gx = gx, gy = gy, gz = gz,
                 )
+                recent.addLast(sample)
+                while (recent.isNotEmpty() && sample.timestampNs - recent.first().timestampNs > KEEP_NS) {
+                    recent.removeFirst()
+                }
                 // Both are fed every sample they exist for, and either one firing is a
                 // grab. The readout names each so a disagreement is visible rather than
                 // averaged away.
@@ -350,10 +368,39 @@ class WatchService : Service(), SensorEventListener {
                 ).joinToString(" · ")
                 if (v1 is SnatchDetector.Verdict.Snatch || v2 is SnatchDetector.Verdict.Snatch) {
                     lastFiredAt = System.currentTimeMillis()
-                    onSnatch(if (v1 is SnatchDetector.Verdict.Snatch) "v1" else "v2")
+                    val by = if (v1 is SnatchDetector.Verdict.Snatch) "v1" else "v2"
+                    val hit = (if (by == "v1") v1 else v2) as SnatchDetector.Verdict.Snatch
+                    // Before the lock, so the samples are copied while they are still the
+                    // ones that caused it. Wrapped: the log must never stand in the way of
+                    // locking.
+                    if (Settings.learn(this)) runCatching { logAlert(by, hit) }
+                    onSnatch(by)
                 }
             }
         }
+    }
+
+    private fun logAlert(by: String, hit: SnatchDetector.Verdict.Snatch) {
+        val now = System.currentTimeMillis()
+        AlertLog.record(
+            this,
+            AlertRecord(
+                id = now,
+                time = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+                    .format(java.util.Date(now)),
+                by = by,
+                value = hit.axialJerk,
+                rotation = hit.rotation,
+                triggerNs = hit.atNs,
+                detectors = Settings.detector(this).name,
+                sensitivity = Settings.sensitivity(this),
+                uprightGuard = Settings.uprightGuard(this),
+                readout = lastVerdict,
+                app = "${com.verisonder.sonderassist.BuildConfig.VERSION_NAME} " +
+                    "(${com.verisonder.sonderassist.BuildConfig.VERSION_CODE})",
+                samples = recent.toList(),
+            ),
+        )
     }
 
     private fun onSnatch(by: String) = fire("detected a grab ($by)", quiet = false)
@@ -690,6 +737,9 @@ class WatchService : Service(), SensorEventListener {
 
     companion object {
         private const val CHANNEL_ID = "watch"
+
+        /** Four seconds of samples for the alert log. */
+        private const val KEEP_NS = 4_000_000_000L
         private const val NOTIFICATION_ID = 1
         private const val ALERT_CHANNEL_ID = "alert"
         private const val ALERT_NOTIFICATION_ID = 2
