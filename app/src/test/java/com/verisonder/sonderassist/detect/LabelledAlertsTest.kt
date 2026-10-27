@@ -40,7 +40,9 @@ class LabelledAlertsTest {
             .firstOrNull()
     }
 
+    // As the phone ran: most cautious setting, upright guard off.
     private val cautious = SnatchDetector.Tuning.forSensitivity(0f)
+        .copy(uprightMinGravityY = Float.NEGATIVE_INFINITY)
 
     @Test
     fun `v1 still fires on every alert at the sample the phone did`() {
