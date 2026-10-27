@@ -64,7 +64,7 @@ data class AlertRecord(
         appendLine("time $time")
         appendLine("by $by")
         appendLine("value %.3f".format(java.util.Locale.US, value))
-        appendLine("unit " + if (by == "v2") "m/s" else "jerk")
+        appendLine("unit jerk")
         appendLine("rotation %.3f".format(java.util.Locale.US, rotation))
         appendLine("trigger_ns $triggerNs")
         appendLine("detectors $detectors")

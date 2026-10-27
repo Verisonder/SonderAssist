@@ -27,7 +27,7 @@ class AlertRecordTest {
     fun `round trips header and samples`() {
         val (header, samples) = AlertRecord.parse(record().serialise())
         assertEquals("v2", header["by"])
-        assertEquals("m/s", header["unit"])
+        assertEquals("jerk", header["unit"])
         assertEquals("BOTH", header["detectors"])
         assertEquals("on", header["upright_guard"])
         assertEquals("0.00", header["sensitivity"])

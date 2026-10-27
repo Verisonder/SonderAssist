@@ -354,7 +354,7 @@ fun AppRoot(activity: ComponentActivity) {
                 }
 
                 // Which detector. v1 is the jerk detector everything so far was tuned on;
-                // v2 measures the velocity change instead. Both runs them side by side and
+                // v2 is v1 with a shake gate that ignores knocks. Both runs them side by side and
                 // either one firing locks, which is how one gets compared with the other
                 // on a real phone rather than in a fixture.
                 Spacer(Modifier.height(24.dp))
@@ -382,7 +382,7 @@ fun AppRoot(activity: ComponentActivity) {
                 Text(
                     when (whichDetector) {
                         Settings.Detector.V1 -> "The jerk. What every release so far has used."
-                        Settings.Detector.V2 -> "The push. Measures how fast the phone is sent away."
+                        Settings.Detector.V2 -> "v1, but ignores knocks and pockets."
                         Settings.Detector.BOTH -> "Either one firing locks."
                     },
                     style = MaterialTheme.typography.bodyMedium,
@@ -414,28 +414,22 @@ fun AppRoot(activity: ComponentActivity) {
                     com.verisonder.sonderassist.detect.SnatchDetector.Tuning
                         .forSensitivity(sensitivity)
                 }
-                if (whichDetector != Settings.Detector.V2) {
-                    Text(
-                        "v1 needs a jerk of %,.0f, or %,.0f with a twist."
-                            .format(tuned.axialJerk, tuned.axialJerkWithRotation),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Text(
-                        // That figure alone is not enough: it is a rate of change, and
-                        // flicking the edge of a still phone produces a large one while
-                        // moving nothing.
-                        "And at least %.1f m/s² toward the top edge.".format(tuned.minAxialAccel),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
+                Text(
+                    "v1 needs a jerk of %,.0f, or %,.0f with a twist."
+                        .format(tuned.axialJerk, tuned.axialJerkWithRotation),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Text(
+                    // That figure alone is not enough: it is a rate of change, and
+                    // flicking the edge of a still phone produces a large one while
+                    // moving nothing.
+                    "And at least %.1f m/s² toward the top edge.".format(tuned.minAxialAccel),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
                 if (whichDetector != Settings.Detector.V1) {
-                    val tuned2 = remember(sensitivity) {
-                        com.verisonder.sonderassist.detect.ImpulseDetector.Tuning
-                            .forSensitivity(sensitivity)
-                    }
                     Text(
-                        "v2 needs a push of %.2f m/s, or %.2f with a twist."
-                            .format(tuned2.minDeltaV, tuned2.minDeltaVWithRotation),
+                        "v2 needs the same, then %.0f m/s² of shaking around it."
+                            .format(com.verisonder.sonderassist.detect.SnatchDetector.Tuning.V2_MIN_SHAKE),
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }

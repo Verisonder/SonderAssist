@@ -25,7 +25,6 @@ import com.verisonder.sonderassist.R
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.detect.Sample
 import com.verisonder.sonderassist.media.Alarm
-import com.verisonder.sonderassist.detect.ImpulseDetector
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.PowerMenu
@@ -53,7 +52,7 @@ class WatchService : Service(), SensorEventListener {
     // the service restarted.
     // Either may be absent: which ones run follows Settings.detector.
     private var detector: SnatchDetector? = null
-    private var detector2: ImpulseDetector? = null
+    private var detector2: SnatchDetector? = null
     private var listening = false
 
     // The gyroscope arrives on its own schedule, so the latest reading is held and
@@ -313,8 +312,12 @@ class WatchService : Service(), SensorEventListener {
             null
         }
         detector2 = if (which != Settings.Detector.V1) {
-            ImpulseDetector(
-                ImpulseDetector.Tuning.forSensitivity(sensitivity).copy(uprightMinGravityY = upright)
+            // v1 plus the shake gate, which came from the alert log.
+            SnatchDetector(
+                SnatchDetector.Tuning.forSensitivity(sensitivity).copy(
+                    uprightMinGravityY = upright,
+                    minShake = SnatchDetector.Tuning.V2_MIN_SHAKE,
+                )
             )
         } else {
             null
@@ -364,7 +367,7 @@ class WatchService : Service(), SensorEventListener {
                 val v2 = detector2?.accept(sample)
                 lastVerdict = listOfNotNull(
                     v1?.let { "v1 " + words(it, "acceleration %.0f") },
-                    v2?.let { "v2 " + words(it, "push %.2f m/s") },
+                    v2?.let { "v2 " + words(it, "acceleration %.0f") },
                 ).joinToString(" · ")
                 if (v1 is SnatchDetector.Verdict.Snatch || v2 is SnatchDetector.Verdict.Snatch) {
                     lastFiredAt = System.currentTimeMillis()

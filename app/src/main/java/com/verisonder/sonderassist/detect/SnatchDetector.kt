@@ -94,6 +94,20 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
      *   the same order as the transient itself: the filter then tracks the pull, subtracts
      *   it as though it were gravity, and the straight axial grab silently stops firing.
      *   That was the behaviour before it was measured.
+     * @param minShake m/s². The average of |‖a‖ − g| over [shakeHalfWindowMs] either
+     *   side of the trigger must reach this, or the candidate is thrown out. Zero is off,
+     *   which is v1; [V2_MIN_SHAKE] is v2.
+     *
+     *   **This came from his alert log, not from physics.** 31 labelled alerts, replayed
+     *   sample for sample. Every false alarm — pocketing, a knock, being set down, being
+     *   flipped — is one sharp sample in otherwise ordinary handling, and scored 1.6 to
+     *   9.2. Every staged theft kept the phone shaking hard for the whole 300 ms and
+     *   scored 9.3 to 23.3. At 8 the log loses 16 of 19 false alarms and keeps 11 of 11
+     *   thefts. 9 would lose 18 of 19, but it sits 0.1 under the gentlest theft, and all
+     *   of those were staged by one person with one grip.
+     * @param shakeHalfWindowMs how far either side of the trigger the shake is averaged.
+     *   The pull often starts a few tens of milliseconds before the sample that trips
+     *   the jerk bar, so the window has to look back as well as forward.
      */
     data class Tuning(
         val axialJerk: Float = 600f,
@@ -115,8 +129,13 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         val heldLagMs: Long = 250,
         val uprightMinGravityY: Float = UPSIDE_DOWN_Y,
         val gravityAlpha: Float = 0.98f,
+        val minShake: Float = 0f,
+        val shakeHalfWindowMs: Long = 150,
     ) {
         companion object {
+            /** The shake gate that turns v1 into v2. See [minShake]. */
+            const val V2_MIN_SHAKE = 8f
+
             /**
              * The top edge more than thirty degrees below horizontal. Held here so the
              * service and the fixtures name the same number rather than each carrying a
@@ -184,6 +203,7 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
     private var candidateJerk = 0f
     private var candidateRotation = 0f
     private var inCandidate = false
+    private var shakeChecked = false
     private var freeFallSinceNs = 0L
 
     var verdict: Verdict = Verdict.Idle
@@ -257,6 +277,7 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
                 return verdict
             }
             inCandidate = true
+            shakeChecked = false
             candidateAtNs = sample.timestampNs
             candidateJerk = jerk
             candidateRotation = rotation
@@ -285,6 +306,16 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
             return Verdict.Rejected("came to rest inside the window")
         }
 
+        // Judged once, as soon as the window after the trigger is complete. The samples
+        // before it are still in the held window, which reaches back over a second.
+        if (!shakeChecked && tuning.minShake > 0f && elapsedMs >= tuning.shakeHalfWindowMs) {
+            shakeChecked = true
+            if (shakeAround(candidateAtNs) < tuning.minShake) {
+                inCandidate = false
+                return Verdict.Rejected("too gentle — a knock, not a pull")
+            }
+        }
+
         if (elapsedMs >= tuning.confirmWindowMs) {
             inCandidate = false
             return Verdict.Snatch(candidateJerk, candidateRotation, candidateAtNs)
@@ -310,6 +341,19 @@ class SnatchDetector(private val tuning: Tuning = Tuning()) {
         gravityX = a * gravityX + (1 - a) * sample.ax
         gravityY = a * gravityY + (1 - a) * sample.ay
         gravityZ = a * gravityZ + (1 - a) * sample.az
+    }
+
+    /** Average of |‖a‖ − g| over the samples within [Tuning.shakeHalfWindowMs] of [atNs]. */
+    private fun shakeAround(atNs: Long): Float {
+        val half = tuning.shakeHalfWindowMs * 1_000_000
+        var sum = 0.0
+        var count = 0
+        for (s in window) {
+            if (s.timestampNs < atNs - half || s.timestampNs > atNs + half) continue
+            sum += abs(s.accelMagnitude - Sample.GRAVITY)
+            count++
+        }
+        return if (count == 0) 0f else (sum / count).toFloat()
     }
 
     private fun trackFreeFall(sample: Sample) {
