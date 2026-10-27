@@ -381,7 +381,7 @@ fun AppRoot(activity: ComponentActivity) {
                 Spacer(Modifier.height(6.dp))
                 Text(
                     when (whichDetector) {
-                        Settings.Detector.V1 -> "The jerk. What every release so far has used."
+                        Settings.Detector.V1 -> "The acceleration. What every release so far has used."
                         Settings.Detector.V2 -> "v1, but ignores knocks and pockets."
                         Settings.Detector.BOTH -> "Either one firing locks."
                     },
@@ -415,7 +415,7 @@ fun AppRoot(activity: ComponentActivity) {
                         .forSensitivity(sensitivity)
                 }
                 Text(
-                    "v1 needs a jerk of %,.0f, or %,.0f with a twist."
+                    "v1 needs an acceleration of %,.0f, or %,.0f with a twist."
                         .format(tuned.axialJerk, tuned.axialJerkWithRotation),
                     style = MaterialTheme.typography.bodyMedium,
                 )
