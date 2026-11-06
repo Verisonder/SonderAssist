@@ -325,6 +325,22 @@ object Reporter {
     }
 
     /**
+     * Where the phone is, composed for a reply to a text command.
+     *
+     * Reuses the same last-known read, battery line and map link as a theft report, but
+     * without the "this phone was taken" framing — this is the owner asking on purpose. It
+     * never waits for a fix, for the same reason the report does not: a position delivered
+     * now beats a better one delivered after the phone is off.
+     */
+    fun locateText(context: Context): String {
+        val where = lastKnown(context)
+            ?: return "SonderAssist: no position stored yet. ${battery(context)}"
+        val link = "https://maps.google.com/?q=${where.latitude},${where.longitude}"
+        return "SonderAssist: ${where.latitude}, ${where.longitude} " +
+            "(±${where.accuracy.toInt()}m) ${battery(context)} $link"
+    }
+
+    /**
      * Battery, and whether it is going up.
      *
      * Worth as much as the position over a long run: it says how long the phone has left to

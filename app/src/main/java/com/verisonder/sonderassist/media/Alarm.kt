@@ -52,6 +52,61 @@ object Alarm {
         handler.postDelayed(task, Settings.graceSeconds(app) * 1000L)
     }
 
+    /**
+     * Ring now, on demand — the "find my phone" sound, not the theft siren.
+     *
+     * Unlike [scheduleAfterGrace] it ignores the grace period and the alarm-after-theft
+     * switch, because the owner asked for it deliberately from another phone; there is no
+     * false alarm to guard against. Loud on the alarm stream so a silenced phone still
+     * sounds, and it stops itself after [seconds] so a phone left ringing somewhere does
+     * not run its battery flat. [stop] ends it early and puts the volume back — the same
+     * [stop] the theft path uses, so the two never leave a player or a raised volume behind.
+     */
+    @Synchronized
+    fun ringNow(context: Context, seconds: Int = 30) {
+        val app = context.applicationContext
+        appContext = app
+        cancelPending()
+        player?.runCatching { stop(); release() }
+        player = null
+
+        val audio = app.getSystemService(AudioManager::class.java)
+        previousVolume = audio.getStreamVolume(AudioManager.STREAM_ALARM)
+        runCatching {
+            audio.setStreamVolume(
+                AudioManager.STREAM_ALARM,
+                audio.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                0,
+            )
+        }
+
+        val uri = Settings.alarmUri(app)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        player = runCatching {
+            MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                setDataSource(app, uri)
+                // Looped on purpose here: it rings until the timer below stops it, so you
+                // can follow the sound to the phone.
+                isLooping = true
+                prepare()
+                start()
+            }
+        }.onFailure {
+            CrashLog.record(app, "The ring could not play $uri", it)
+        }.getOrNull()
+
+        // Stops itself, so a phone ringing in a drawer somewhere does not drain the battery.
+        val task = Runnable { stop() }
+        pending = task
+        handler.postDelayed(task, seconds * 1000L)
+    }
+
     @Synchronized
     fun stop() {
         cancelPending()

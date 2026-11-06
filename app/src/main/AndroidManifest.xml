@@ -18,6 +18,14 @@
     <uses-permission android:name="android.permission.SEND_SMS" />
 
     <!--
+        The inbound half of text commands: the phone has to hear a command to act on it.
+        Guarded three ways - the feature is off by default, SMS_RECEIVED is a protected
+        broadcast only the system sends, and nothing runs unless the text starts with the
+        owner's chosen word.
+    -->
+    <uses-permission android:name="android.permission.RECEIVE_SMS" />
+
+    <!--
         Background location needs "Allow all the time", granted by hand. Without it the
         position is only readable while the app is in front, which is never the case during
         a theft.
@@ -222,6 +230,22 @@
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            Text commands. SMS_RECEIVED is a protected broadcast - only the system can send
+            it - and this is further gated by requiring BROADCAST_SMS, which only the system
+            holds, so no other app can forge a command. The owner's secret word gates the
+            owner's own texts on top of that. Exported because the system delivers the
+            broadcast from outside the app.
+        -->
+        <receiver
+            android:name=".command.SmsCommandReceiver"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
 

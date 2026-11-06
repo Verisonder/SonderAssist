@@ -155,6 +155,12 @@ fun AppRoot(activity: ComponentActivity) {
     val askReportPermissions = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
+    var smsCommands by remember { mutableStateOf(Settings.smsCommands(activity)) }
+    var secretWord by remember { mutableStateOf(Settings.secretWord(activity)) }
+    var commandNote by remember { mutableStateOf(Settings.commandNote(activity)) }
+    val askReceiveSms = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { }
     var shizuku by remember { mutableStateOf(PowerMenu.available()) }
     var shizukuAsk by remember { mutableStateOf(PowerMenu.needsPermission()) }
     var suppressed by remember { mutableStateOf(Settings.powerMenuSuppressed(activity)) }
@@ -239,6 +245,7 @@ fun AppRoot(activity: ComponentActivity) {
                 learnPending = AlertLog.pending(activity)
                 reportNote = Settings.reportNote(activity)
                 reportRunning = Settings.reportRunning(activity)
+                commandNote = Settings.commandNote(activity)
                 fullScreen = canUseFullScreen(activity)
                 // Re-read on every return, because the two things that change it both
                 // happen outside this app: granting the permission, and pairing the watch
@@ -1113,6 +1120,92 @@ fun AppRoot(activity: ComponentActivity) {
                             Spacer(Modifier.height(16.dp))
                             Text(
                                 "The last report, step by step",
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(note, style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(28.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(28.dp))
+
+                SectionLabel("Control by text")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Answer texts", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Text your word and a command from any phone.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = smsCommands,
+                        onCheckedChange = {
+                            smsCommands = it
+                            Settings.setSmsCommands(activity, it)
+                            if (it) {
+                                askReceiveSms.launch(
+                                    arrayOf(
+                                        android.Manifest.permission.RECEIVE_SMS,
+                                        android.Manifest.permission.SEND_SMS,
+                                    )
+                                )
+                            }
+                        },
+                    )
+                }
+
+                AnimatedVisibility(visible = smsCommands) {
+                    Column {
+                        Spacer(Modifier.height(12.dp))
+                        OutlinedTextField(
+                            value = secretWord,
+                            onValueChange = { secretWord = it.take(24) },
+                            label = { Text("Secret word") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        TextButton(onClick = { Settings.setSecretWord(activity, secretWord) }) {
+                            Text("Save word")
+                        }
+                        Text(
+                            // The word is the whole gate, so an empty one has to say so here
+                            // rather than just quietly answering nothing.
+                            if (secretWord.isBlank()) {
+                                "Set a word, or nothing will be answered."
+                            } else {
+                                "Text \"$secretWord locate\" from any phone to try it."
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        Text(
+                            "Commands: locate, ring, lock, help.",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
+
+                        Spacer(Modifier.height(12.dp))
+                        FilledTonalButton(onClick = { openPermissions(activity) }) {
+                            Text("Open permissions")
+                        }
+                        Text(
+                            "Needs permission to receive and send texts.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+
+                        commandNote?.let { note ->
+                            Spacer(Modifier.height(16.dp))
+                            Text(
+                                "The last commands",
                                 style = MaterialTheme.typography.bodyLarge,
                             )
                             Spacer(Modifier.height(4.dp))

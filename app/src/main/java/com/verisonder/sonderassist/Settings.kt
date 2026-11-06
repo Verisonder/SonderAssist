@@ -56,6 +56,9 @@ object Settings {
     private const val POWER_MENU_SUPPRESSED = "power_menu_suppressed"
     private const val SAVED_CHORD = "saved_chord"
     private const val SAVED_LONG_PRESS = "saved_long_press"
+    private const val SMS_COMMANDS = "sms_commands"
+    private const val SECRET_WORD = "secret_word"
+    private const val COMMAND_NOTE = "command_note"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -602,5 +605,55 @@ object Settings {
 
     fun setMessage(context: Context, value: String) {
         of(context).edit().putString(MESSAGE, value.take(200)).apply()
+    }
+
+    /**
+     * Whether the phone acts on text commands at all.
+     *
+     * Off until asked for, like everything else that reaches out of the app. On its own it
+     * does nothing without a secret word set as well.
+     */
+    fun smsCommands(context: Context): Boolean = of(context).getBoolean(SMS_COMMANDS, false)
+
+    fun setSmsCommands(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(SMS_COMMANDS, value).apply()
+    }
+
+    /**
+     * The word that must lead every text command, chosen by the person.
+     *
+     * It is the whole gate: a command runs only if the text starts with this, so a blank
+     * word means nothing is ever acted on. Not a secret kept from the repository — it is
+     * typed on the phone and lives only here.
+     */
+    fun secretWord(context: Context): String = of(context).getString(SECRET_WORD, "").orEmpty()
+
+    fun setSecretWord(context: Context, value: String) {
+        of(context).edit().putString(SECRET_WORD, value.trim()).apply()
+    }
+
+    /**
+     * The trail of the last few text commands, so the feature cannot fail silently.
+     *
+     * Each command writes two lines — that it arrived, and whether the reply went out — so
+     * an empty trail and "arrived but reply failed" are never the same thing. A text that
+     * does not start with the word is ignored and left out, to keep every passing SMS from
+     * filling the log.
+     */
+    fun commandNote(context: Context): String? = of(context).getString(COMMAND_NOTE, null)
+
+    fun noteCommand(context: Context, what: String, fresh: Boolean = false) {
+        val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
+        val kept = if (fresh) {
+            emptyList()
+        } else {
+            commandNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        }
+        // commit: a command can arrive while the phone is being locked, and the process
+        // may not survive long enough to flush an apply().
+        of(context).edit()
+            .putString(COMMAND_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
+            .commit()
     }
 }
