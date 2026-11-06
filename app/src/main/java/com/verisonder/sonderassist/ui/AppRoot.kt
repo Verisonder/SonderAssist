@@ -3,6 +3,7 @@ package com.verisonder.sonderassist.ui
 import android.content.Intent
 import android.provider.Settings as AndroidSettings
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -23,17 +24,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.KeyboardArrowLeft
 import androidx.compose.material.icons.filled.KeyboardArrowRight
 // Aliased: the app has its own Settings, and two imports of one name do not compile.
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Settings as SettingsIcon
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,6 +51,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -108,13 +107,14 @@ private fun pairedDevices(context: android.content.Context): List<Pair<String, S
 @Composable
 fun AppRoot(activity: ComponentActivity) {
     /**
-     * Which of the two screens is showing.
+     * Which page is showing.
      *
-     * One screen carried everything: the switch that is looked at daily and a dozen
-     * settings that are touched once. The daily thing was at the top of a long scroll and
-     * everything else was in the way of it.
+     * One screen carried everything, then two did: the status, then a gear button over a
+     * long scroll of thirteen sections in no order anyone could guess. Now home holds the
+     * status and one row per subject, each row saying what is on, and each page holds one
+     * subject only.
      */
-    var onSettings by remember { mutableStateOf(false) }
+    var page by remember { mutableStateOf(Page.Home) }
     var granted by remember { mutableStateOf(DeviceAdminLocker.isReady(activity)) }
     // Refreshed on resume, so returning from a failed tile tap shows the reason.
     var crash by remember { mutableStateOf(CrashLog.read(activity)) }
@@ -272,21 +272,28 @@ fun AppRoot(activity: ComponentActivity) {
     // LocalContentColor to onSurface; without it every unstyled Text falls back to
     // Compose's default of black, which on a dark background reads as washed out and
     // half-legible. Dropping it during a rewrite is what made the screen look grey.
+    // A fresh page starts at its top, and the system back gesture returns to the home
+    // screen instead of closing the app from inside a page.
+    val scroll = rememberScrollState()
+    LaunchedEffect(page) { scroll.scrollTo(0) }
+    BackHandler(enabled = page != Page.Home) { page = Page.Home }
+
     Surface(modifier = Modifier.fillMaxSize()) {
     Box(modifier = Modifier.fillMaxSize()) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scroll)
             .padding(horizontal = 20.dp, vertical = 28.dp),
     ) {
-        if (onSettings) {
+        if (page != Page.Home) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { onSettings = false }) {
+                IconButton(onClick = { page = Page.Home }) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
                 }
-                Text("Settings", style = MaterialTheme.typography.headlineMedium)
+                Text(page.title, style = MaterialTheme.typography.headlineMedium)
             }
+            Spacer(Modifier.height(8.dp))
         } else {
             // The home screen carries three things and was sitting hard against the status
             // bar with the rest of the screen empty below it. Pushed down so it reads as a
@@ -305,7 +312,7 @@ fun AppRoot(activity: ComponentActivity) {
 
         // Written since the first version and read by nothing, which is the same as not
         // recording it at all. It only appears when there is something to say.
-        crash?.let { text ->
+        if (page == Page.Home) crash?.let { text ->
             Text("Something failed", style = MaterialTheme.typography.titleMedium)
             Spacer(Modifier.height(4.dp))
             Text(
@@ -341,9 +348,8 @@ fun AppRoot(activity: ComponentActivity) {
             ) { activity.startActivity(DeviceAdminLocker.activationIntent(activity)) }
 
             else -> {
-                // The two screens. Everything that is looked at is on the first;
-                // everything that is set once is behind the button in the corner.
-                if (!onSettings) {
+                // Home carries the status and one row per page; each page holds one subject.
+                if (page == Page.Home) {
                 StatusCard(
                     watching = watching,
                     onToggle = {
@@ -359,7 +365,57 @@ fun AppRoot(activity: ComponentActivity) {
                         style = MaterialTheme.typography.bodyMedium,
                     )
                 }
+                // One row per page, each saying what is on, so the home screen answers "what is this
+                // doing" without opening anything, and every setting is two taps away at most.
+                Spacer(Modifier.height(28.dp))
+                HorizontalDivider()
+                PageRow(
+                    "Detection",
+                    when (whichDetector) {
+                        Settings.Detector.V1 -> "v1"
+                        Settings.Detector.V2 -> "v2"
+                        Settings.Detector.BOTH -> "v1 + v2"
+                    } + " · ${(sensitivity * 100).toInt()}%" +
+                        (if (learn) " · learning" else "") +
+                        (if (learn && learnPending != null) " · 1 to answer" else ""),
+                ) { page = Page.Detection }
+                HorizontalDivider()
+                PageRow(
+                    "The strap",
+                    if (tether) {
+                        Settings.tetherName(activity).ifBlank { "On" } + " · ${tetherGrace} s"
+                    } else {
+                        "Off"
+                    },
+                ) { page = Page.Strap }
+                HorizontalDivider()
+                PageRow(
+                    "When it fires",
+                    (if (alarmOn) "Alarm after $grace s" else "Lock only") +
+                        (if (jarvis) " · J.A.R.V.I.S" else ""),
+                ) { page = Page.Fires }
+                HorizontalDivider()
+                PageRow(
+                    "Find my phone",
+                    listOfNotNull(
+                        if (report) "Location on" else null,
+                        if (smsCommands) "Texts on" else null,
+                    ).joinToString(" · ").ifEmpty { "Off" },
+                ) { page = Page.Find }
+                HorizontalDivider()
+                PageRow("Power menu", if (blockPower) "Blocked" else "Off") { page = Page.Power }
+                HorizontalDivider()
+                PageRow(
+                    "Keep it running",
+                    listOf(!batteryExempt, !canOverlay).count { it }.let {
+                        if (it == 0) "All allowed" else "$it to fix"
+                    },
+                ) { page = Page.Running }
+                HorizontalDivider()
+                Spacer(Modifier.height(32.dp))
+                }
 
+                if (page == Page.Detection) {
                 // Which detector. v1 is the jerk detector everything so far was tuned on;
                 // v2 is v1 with a shake gate that ignores knocks. Both runs them side by side and
                 // either one firing locks, which is how one gets compared with the other
@@ -514,14 +570,11 @@ fun AppRoot(activity: ComponentActivity) {
                         },
                     )
                 }
+                }
 
-                // On the home screen and not behind the settings button, because it is
-                // the second of the two ways this app can decide the phone is gone. The
-                // first one is the slider above it. Putting one in front and the other
-                // four screens down said they were different kinds of thing, and they are
-                // not.
+                if (page == Page.Strap) {
+                // Its own page, reached from a row on the home screen that says whether it is on.
                 Spacer(Modifier.height(24.dp))
-                SectionLabel("The strap")
                 Spacer(Modifier.height(16.dp))
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -737,10 +790,9 @@ fun AppRoot(activity: ComponentActivity) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-
                 }
 
-                if (onSettings) {
+                if (page == Page.Fires) {
                 Text(
                     if (typeSpeed == 0) "No typing effect" else "Type it out at $typeSpeed ms a letter",
                     style = MaterialTheme.typography.bodyLarge,
@@ -939,11 +991,9 @@ fun AppRoot(activity: ComponentActivity) {
                         Text("Open other permissions")
                     }
                 }
+                }
 
-                Spacer(Modifier.height(28.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(28.dp))
-
+                if (page == Page.Find) {
                 SectionLabel("Send the location")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1213,12 +1263,9 @@ fun AppRoot(activity: ComponentActivity) {
                         }
                     }
                 }
+                }
 
-                Spacer(Modifier.height(28.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(28.dp))
-
-                SectionLabel("The power menu")
+                if (page == Page.Power) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1275,7 +1322,9 @@ fun AppRoot(activity: ComponentActivity) {
                         )
                     }
                 }
+                }
 
+                if (page == Page.Fires) {
                 Spacer(Modifier.height(28.dp))
                 HorizontalDivider()
                 Spacer(Modifier.height(28.dp))
@@ -1420,12 +1469,9 @@ fun AppRoot(activity: ComponentActivity) {
                         )
                     }
                 }
+                }
 
-                Spacer(Modifier.height(28.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(28.dp))
-
-                SectionLabel("Keeping it running")
+                if (page == Page.Running) {
                 Text(
                     if (batteryExempt) {
                         "Battery optimisation is off for SonderAssist."
@@ -1523,27 +1569,11 @@ fun AppRoot(activity: ComponentActivity) {
                 }
                 Spacer(Modifier.height(32.dp))
                 }
+
             }
         }
     }
 
-    // Only once there is something to configure. Before the permission is granted the
-    // screen has one job, which is asking for it.
-    if (granted && hasLock) {
-        FloatingActionButton(
-            onClick = { onSettings = !onSettings },
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(20.dp),
-        ) {
-            Icon(
-                // The alias renames the member, so it is still reached through the
-                // receiver: Icons.Filled.SettingsIcon, not a bare SettingsIcon.
-                if (onSettings) Icons.Filled.Close else Icons.Filled.SettingsIcon,
-                contentDescription = if (onSettings) "Close settings" else "Settings",
-            )
-        }
-    }
     }
     }
 
@@ -1728,5 +1758,38 @@ private fun openPermissions(activity: ComponentActivity) {
                 )
             )
         }
+    }
+}
+
+/** One subject each. Home is the status and the rows that lead to the rest. */
+private enum class Page(val title: String) {
+    Home(""),
+    Detection("Detection"),
+    Strap("The strap"),
+    Fires("When it fires"),
+    Find("Find my phone"),
+    Power("Power menu"),
+    Running("Keep it running"),
+}
+
+/** A row on the home screen: the page's name, what is on there now, and the way in. */
+@Composable
+private fun PageRow(title: String, summary: String, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                summary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Icon(Icons.Filled.KeyboardArrowRight, contentDescription = null)
     }
 }
