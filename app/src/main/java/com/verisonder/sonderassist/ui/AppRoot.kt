@@ -148,6 +148,7 @@ fun AppRoot(activity: ComponentActivity) {
     var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
     var strapVibrate by remember { mutableStateOf(Settings.strapVibrate(activity)) }
+    var strapListen by remember { mutableStateOf(Settings.strapListen(activity)) }
     var strapMessage by remember { mutableStateOf(Settings.strapMessage(activity)) }
     var typeSpeed by remember { mutableIntStateOf(Settings.typeSpeedMs(activity)) }
     var strapDelay by remember { mutableIntStateOf(Settings.strapDelaySeconds(activity)) }
@@ -996,6 +997,30 @@ fun AppRoot(activity: ComponentActivity) {
                             onCheckedChange = {
                                 strapVibrate = it
                                 Settings.setStrapVibrate(activity, it)
+                            },
+                        )
+                    }
+
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Listen for \"${fridayWords.first()}\"", style = MaterialTheme.typography.bodyLarge)
+                            Text(
+                                if (friday) "For 60 s when the strap fires." else "Needs F.R.I.D.A.Y mode on.",
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                        Switch(
+                            checked = strapListen,
+                            onCheckedChange = {
+                                strapListen = it
+                                Settings.setStrapListen(activity, it)
+                                if (it && !hasMic) {
+                                    askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+                                }
                             },
                         )
                     }

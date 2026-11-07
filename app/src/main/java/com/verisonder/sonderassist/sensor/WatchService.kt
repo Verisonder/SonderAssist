@@ -596,6 +596,10 @@ class WatchService : Service(), SensorEventListener {
             // ACTION_SCREEN_ON branch above puts it up — which is the whole behaviour
             // wanted here, and it already existed for the alert being covered.
             Settings.noteAlert(this, "waiting, silent, for the screen to come back")
+            // Listening makes no sound, so it does not break the strap's silence.
+            if (Settings.friday(this) && Settings.strapListen(this)) {
+                runCatching { Friday.listen(this) }
+            }
             return
         }
 

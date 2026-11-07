@@ -49,6 +49,7 @@ object Settings {
     private const val TYPE_SPEED = "type_speed"
     private const val STRAP_MESSAGE = "strap_message"
     private const val STRAP_VIBRATE = "strap_vibrate"
+    private const val STRAP_LISTEN = "strap_listen"
     private const val STRAP_DELAY = "strap_delay"
     private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
@@ -398,6 +399,13 @@ object Settings {
 
     fun setStrapVibrate(context: Context, value: Boolean) {
         of(context).edit().putBoolean(STRAP_VIBRATE, value).apply()
+    }
+
+    /** When the strap fires, also listen for the F.R.I.D.A.Y words for a minute. Off by default. */
+    fun strapListen(context: Context): Boolean = of(context).getBoolean(STRAP_LISTEN, false)
+
+    fun setStrapListen(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(STRAP_LISTEN, value).apply()
     }
 
     /** Seconds before the location goes out on a strap alert. */
