@@ -93,8 +93,7 @@ object Alarm {
             )
         }
 
-        val uri = Settings.alarmUri(app)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        val uri = soundUri(app)
         player = runCatching {
             MediaPlayer().apply {
                 setAudioAttributes(
@@ -184,7 +183,7 @@ object Alarm {
     @Synchronized
     fun siren(context: Context) {
         val app = context.applicationContext
-        val uri = Settings.alarmUri(app) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        val uri = soundUri(app)
         play(app, uri, loop = true) {}
         // Unlocking is what stops it; this is the backstop for a phone nobody gets back
         // to, so it does not scream until the battery dies.
@@ -264,8 +263,7 @@ object Alarm {
             )
         }
 
-        val uri = Settings.alarmUri(context)
-            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        val uri = soundUri(context)
         val repeats = Settings.alarmRepeats(context)
         var played = 0
 
@@ -308,6 +306,17 @@ object Alarm {
         if (!findRinging) return
         findRinging = false
         app.getSystemService(android.app.NotificationManager::class.java)?.cancel(RING_NOTIFICATION_ID)
+    }
+
+    /** The siren that ships with the app, the phone's alarm, or the one picked. */
+    private fun soundUri(context: Context): Uri {
+        val phone = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        return when (Settings.soundKind(context)) {
+            Settings.SoundKind.SIREN ->
+                Uri.parse("android.resource://${context.packageName}/${R.raw.siren}")
+            Settings.SoundKind.PHONE -> phone
+            Settings.SoundKind.CUSTOM -> Settings.alarmUri(context) ?: phone
+        }
     }
 
     private fun cancelPending() {

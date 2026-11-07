@@ -262,6 +262,7 @@ fun AppRoot(activity: ComponentActivity) {
     var repeats by remember { mutableIntStateOf(Settings.alarmRepeats(activity)) }
     var message by remember { mutableStateOf(Settings.message(activity)) }
     var alarmName by remember { mutableStateOf(Settings.alarmUri(activity)?.lastPathSegment) }
+    var soundKind by remember { mutableStateOf(Settings.soundKind(activity)) }
     var confirmRemove by remember { mutableStateOf(false) }
     var backgroundName by remember { mutableStateOf(Settings.backgroundUri(activity)?.lastPathSegment) }
     var readout by remember { mutableStateOf(WatchService.lastVerdict) }
@@ -280,6 +281,8 @@ fun AppRoot(activity: ComponentActivity) {
                 )
             }
             Settings.setAlarmUri(activity, uri)
+            Settings.setSoundKind(activity, Settings.SoundKind.CUSTOM)
+            soundKind = Settings.SoundKind.CUSTOM
             alarmName = uri.lastPathSegment
         }
     }
@@ -1869,22 +1872,19 @@ fun AppRoot(activity: ComponentActivity) {
 
                 SectionLabel(if (friday) "Siren" else "Sound")
                 if (friday) {
-                    Text(
-                        alarmName?.let { "Siren: $it" } ?: "Siren: this phone's alarm",
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onClick = { pickAudio.launch(arrayOf("audio/*")) }) {
-                            Text("Choose a sound")
+                    SoundPicker(
+                    kind = soundKind,
+                    customName = alarmName,
+                    onKind = { k ->
+                        if (k == Settings.SoundKind.CUSTOM && alarmName == null) {
+                            pickAudio.launch(arrayOf("audio/*"))
+                        } else {
+                            soundKind = k
+                            Settings.setSoundKind(activity, k)
                         }
-                        if (alarmName != null) {
-                            TextButton(onClick = {
-                                Settings.setAlarmUri(activity, null)
-                                alarmName = null
-                            }) { Text("Use default") }
-                        }
-                    }
+                    },
+                    onPick = { pickAudio.launch(arrayOf("audio/*")) },
+                )
                 }
                 if (!friday) Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -1909,22 +1909,19 @@ fun AppRoot(activity: ComponentActivity) {
                 AnimatedVisibility(visible = alarmOn && !friday) {
                     Column {
                         Spacer(Modifier.height(16.dp))
-                        Text(
-                            alarmName?.let { "Sound: $it" } ?: "Sound: this phone's alarm",
-                            style = MaterialTheme.typography.bodyMedium,
+                        SoundPicker(
+                            kind = soundKind,
+                            customName = alarmName,
+                            onKind = { k ->
+                                if (k == Settings.SoundKind.CUSTOM && alarmName == null) {
+                                    pickAudio.launch(arrayOf("audio/*"))
+                                } else {
+                                    soundKind = k
+                                    Settings.setSoundKind(activity, k)
+                                }
+                            },
+                            onPick = { pickAudio.launch(arrayOf("audio/*")) },
                         )
-                        Spacer(Modifier.height(8.dp))
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(onClick = { pickAudio.launch(arrayOf("audio/*")) }) {
-                                Text("Choose a sound")
-                            }
-                            if (alarmName != null) {
-                                TextButton(onClick = {
-                                    Settings.setAlarmUri(activity, null)
-                                    alarmName = null
-                                }) { Text("Use default") }
-                            }
-                        }
 
                         Spacer(Modifier.height(20.dp))
                         Text(
@@ -2294,6 +2291,34 @@ private fun AlertChart(samples: List<com.verisonder.sonderassist.detect.Sample>,
             drawLine(mark, androidx.compose.ui.geometry.Offset(tx, 0f),
                 androidx.compose.ui.geometry.Offset(tx, size.height), strokeWidth = 3f)
         }
+    }
+}
+
+/** Siren that comes with the app, the phone's alarm, or a picked file. One row. */
+@Composable
+private fun SoundPicker(
+    kind: Settings.SoundKind,
+    customName: String?,
+    onKind: (Settings.SoundKind) -> Unit,
+    onPick: () -> Unit,
+) {
+    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+        listOf(
+            Settings.SoundKind.SIREN to "Siren",
+            Settings.SoundKind.PHONE to "Phone's",
+            Settings.SoundKind.CUSTOM to "Custom",
+        ).forEachIndexed { i, (k, label) ->
+            SegmentedButton(
+                selected = kind == k,
+                onClick = { onKind(k) },
+                shape = SegmentedButtonDefaults.itemShape(i, 3),
+            ) { Text(label) }
+        }
+    }
+    if (kind == Settings.SoundKind.CUSTOM) {
+        Spacer(Modifier.height(8.dp))
+        Text(customName ?: "No sound picked", style = MaterialTheme.typography.bodyMedium)
+        TextButton(onClick = onPick) { Text("Choose another") }
     }
 }
 

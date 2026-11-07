@@ -18,6 +18,7 @@ object Settings {
     private const val SENSITIVITY = "sensitivity"
     private const val ALARM_ENABLED = "alarm_enabled"
     private const val ALARM_URI = "alarm_uri"
+    private const val SOUND_KIND = "sound_kind"
     private const val GRACE_SECONDS = "grace_seconds"
     private const val ALARM_REPEATS = "alarm_repeats"
     private const val MESSAGE = "message"
@@ -137,6 +138,23 @@ object Settings {
     /** Null means the device's own alarm sound. */
     fun alarmUri(context: Context): Uri? =
         of(context).getString(ALARM_URI, null)?.let { runCatching { Uri.parse(it) }.getOrNull() }
+
+    /** Which sound the alarm, the siren and the find ring use. */
+    enum class SoundKind { SIREN, PHONE, CUSTOM }
+
+    /**
+     * The bundled siren unless chosen otherwise. A phone that already had its own sound
+     * picked keeps it.
+     */
+    fun soundKind(context: Context): SoundKind {
+        val stored = of(context).getString(SOUND_KIND, null)
+        if (stored == null) return if (alarmUri(context) != null) SoundKind.CUSTOM else SoundKind.SIREN
+        return runCatching { SoundKind.valueOf(stored) }.getOrDefault(SoundKind.SIREN)
+    }
+
+    fun setSoundKind(context: Context, kind: SoundKind) {
+        of(context).edit().putString(SOUND_KIND, kind.name).apply()
+    }
 
     fun setAlarmUri(context: Context, uri: Uri?) {
         of(context).edit().apply {
