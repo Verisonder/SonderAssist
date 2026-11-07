@@ -54,6 +54,7 @@ object Friday {
     private var listening = false
     private var countdown: Runnable? = null
     private var wake: PowerManager.WakeLock? = null
+    private var screen: PowerManager.WakeLock? = null
     private val muted = mutableListOf<Int>()
 
     /**
@@ -300,6 +301,7 @@ object Friday {
                 sirenOn = false
                 val task = Runnable {
                     countdown = null
+                    screenOff()
                     sirenOn = true
                     Settings.noteFriday(app, "siren on")
                     Alarm.siren(app)
@@ -307,12 +309,14 @@ object Friday {
                 }
                 countdown = task
                 handler.postDelayed(task, ms)
+                screenOn(app, ms)
             }
         }
         return true
     }
 
     private fun cancelCountdown() {
+        screenOff()
         countdown?.let { handler.removeCallbacks(it) }
         countdown = null
         countdownEndsAt = 0L
@@ -363,6 +367,30 @@ object Friday {
                 setReferenceCounted(false)
                 acquire(ms)
             }
+    }
+
+    /**
+     * Screen on, and kept on, for the length of the countdown, so the wheel can be watched
+     * to the end. Waking the screen also brings the alert screen back up. Released when the
+     * countdown ends or is cancelled; the timeout is the backstop.
+     */
+    @Suppress("DEPRECATION")
+    private fun screenOn(app: Context, ms: Long) {
+        screenOff()
+        screen = app.getSystemService(PowerManager::class.java)
+            ?.newWakeLock(
+                PowerManager.SCREEN_BRIGHT_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "SonderAssist:countdown",
+            )
+            ?.apply {
+                setReferenceCounted(false)
+                runCatching { acquire(ms + 1_000) }
+            }
+    }
+
+    private fun screenOff() {
+        screen?.runCatching { if (isHeld) release() }
+        screen = null
     }
 
     private fun releaseAwake() {

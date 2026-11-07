@@ -48,6 +48,9 @@ class CountdownView(context: Context) : View(context) {
 
         // Fade in and out rather than appear.
         shown = if (active) min(1f, shown + 0.06f) else (shown - 0.06f).coerceAtLeast(0f)
+        // The screen stays on while the countdown runs, as long as this screen is showing.
+        val counting = !siren && ends > now
+        if (keepScreenOn != counting) keepScreenOn = counting
         if (shown > 0f) drawWheel(canvas, now, ends, total, siren)
         // Keep checking: a countdown can be started at any moment by voice or text. Idle,
         // a few times a second is enough; drawing, every frame.
