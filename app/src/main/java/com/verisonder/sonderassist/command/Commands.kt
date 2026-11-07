@@ -68,8 +68,14 @@ object Commands {
         val seconds = Regex("""^(\d+)\s*${Regex.escape(w.countdown)}""")
             .find(rest.lowercase())?.groupValues?.get(1)?.toIntOrNull()
             ?.takeIf { it > 0 }?.coerceAtMost(3_600)
-        val list = listOfNotNull(w.locate, w.lock, w.find, "10${w.countdown}", w.play.ifEmpty { null }, "help")
+        val list = listOfNotNull(
+            w.locate, w.live, w.stop, w.lock, w.find, "10${w.countdown}", w.play.ifEmpty { null }, "help",
+        )
             .joinToString(" | ")
+
+        // Answered later, once a fresh position has come in.
+        var later: ((String) -> Unit) -> Unit = { }
+        var deferred = false
 
         val answer = when {
             seconds != null -> {
@@ -83,7 +89,26 @@ object Commands {
                     "SonderAssist: F.R.I.D.A.Y already played for this alert."
                 }
             command == "" || command == "help" -> "SonderAssist commands: $word $list"
-            command == w.locate -> Reporter.locateText(context)
+            command == w.locate -> {
+                deferred = true
+                later = { send -> Reporter.locateFresh(context, send) }
+                ""
+            }
+            command == w.live -> {
+                val to = number
+                if (to == null) {
+                    "SonderAssist: live needs a number to text - send it as SMS."
+                } else {
+                    // A few seconds first, so the first text carries a fresh fix.
+                    Reporter.start(context, delaySeconds = 5, alsoTo = to)
+                    "SonderAssist: live location on - ${Settings.reportCount(context)} texts, " +
+                        "every ${Settings.reportIntervalSeconds(context)}s. Text \"$word ${w.stop}\" to end it."
+                }
+            }
+            command == w.stop -> {
+                Reporter.stop(context)
+                "SonderAssist: location stopped."
+            }
             command == w.find -> {
                 Alarm.ringNow(context)
                 "SonderAssist: ringing now for 30s."
@@ -101,11 +126,14 @@ object Commands {
         // Arrival is logged before the reply is attempted, so "got the command but could not
         // answer" is never confused with "never got the command".
         Settings.noteCommand(context, "${command.ifEmpty { "help" }} from $who ($via)")
-        when {
-            reply == null -> Settings.noteCommand(context, "cannot reply - no number or reply button")
-            reply(answer) -> Settings.noteCommand(context, "replied to $who")
-            else -> Settings.noteCommand(context, "reply failed")
+        val send = { text: String ->
+            when {
+                reply == null -> Settings.noteCommand(context, "cannot reply - no number or reply button")
+                reply(text) -> Settings.noteCommand(context, "replied to $who")
+                else -> Settings.noteCommand(context, "reply failed")
+            }
         }
+        if (deferred) later(send) else send(answer)
         return true
     }
 }

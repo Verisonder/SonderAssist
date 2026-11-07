@@ -57,6 +57,12 @@ object Reporter {
     private var pending: Runnable? = null
     private var sent = 0
 
+    /** The number that asked for live location by text, sent to alongside the usual one. */
+    private var extraTo: String? = null
+
+    /** Keeps the last-known position fresh for as long as a run lasts. */
+    private var follower: android.location.LocationListener? = null
+
     /** When the last written update went out, as opposed to the pin being moved. */
     private var lastStatusAt = 0L
 
@@ -66,11 +72,15 @@ object Reporter {
      * Called at the lock, not after it: the countdown is the point.
      */
     @Synchronized
-    fun start(context: Context, delaySeconds: Int? = null) {
-        if (!Settings.reportEnabled(context)) return
+    fun start(context: Context, delaySeconds: Int? = null, alsoTo: String? = null) {
+        // A live request by text runs even when theft reports are switched off: the owner
+        // asked for it, from the number it answers.
+        if (!Settings.reportEnabled(context) && alsoTo == null) return
         val app = context.applicationContext
         cancel()
         sent = 0
+        extraTo = alsoTo
+        follow(app)
         // A pin left live from an earlier run is reused and moved, not left behind.
         lastStatusAt = 0L
         Settings.setReportRunning(app, true)
@@ -93,6 +103,8 @@ object Reporter {
         val app = context.applicationContext
         val wasRunning = Settings.reportRunning(app)
         cancel()
+        unfollow(app)
+        extraTo = null
         Settings.setReportRunning(app, false)
         hide(app)
         val pin = Settings.livePin(app)
@@ -217,7 +229,10 @@ object Reporter {
             // going until it is stopped. Every text is a real message to a real number, so
             // those are counted.
             val text = textFor(context, location)
-            if (sent <= Settings.reportCount(context)) sendSms(context, text)
+            if (sent <= Settings.reportCount(context)) {
+                sendSms(context, text)
+                extraTo?.let { sendSmsTo(context, it, text) }
+            }
             network.execute { sendTelegram(context, location, text) }
 
             // The pin carries no words, so the battery has nowhere to go on it. Once an
@@ -244,7 +259,92 @@ object Reporter {
             )
             schedule(context, next)
         } else {
+            unfollow(context)
             Settings.noteReport(context, "stopped after $sent")
+        }
+    }
+
+    /**
+     * Ask every provider for updates while a run lasts, so each report carries a position
+     * that is seconds old rather than whatever was last stored. Nothing waits on it.
+     */
+    @SuppressLint("MissingPermission")
+    private fun follow(context: Context) {
+        unfollow(context)
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION)
+            != PackageManager.PERMISSION_GRANTED
+        ) return
+        val manager = context.getSystemService(LocationManager::class.java) ?: return
+        val listener = android.location.LocationListener { }
+        follower = listener
+        for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
+            runCatching {
+                if (manager.isProviderEnabled(provider)) {
+                    manager.requestLocationUpdates(provider, 5_000L, 0f, listener, Looper.getMainLooper())
+                }
+            }
+        }
+    }
+
+    private fun unfollow(context: Context) {
+        val listener = follower ?: return
+        follower = null
+        runCatching { context.getSystemService(LocationManager::class.java)?.removeUpdates(listener) }
+    }
+
+    /**
+     * A fresh position for a text reply: whatever arrives first from GPS or the network,
+     * or the stored one after [timeoutMs]. [done] runs once, on the main thread.
+     */
+    @SuppressLint("MissingPermission")
+    fun freshPosition(context: Context, timeoutMs: Long, done: (Location?, Boolean) -> Unit) {
+        val app = context.applicationContext
+        var finished = false
+        val manager = app.getSystemService(LocationManager::class.java)
+        lateinit var listener: android.location.LocationListener
+        fun finish(location: Location?, fresh: Boolean) {
+            if (finished) return
+            finished = true
+            runCatching { manager?.removeUpdates(listener) }
+            done(location ?: lastKnown(app), fresh && location != null)
+        }
+        listener = android.location.LocationListener { finish(it, true) }
+        val allowed = ContextCompat.checkSelfPermission(app, Manifest.permission.ACCESS_FINE_LOCATION) ==
+            PackageManager.PERMISSION_GRANTED
+        if (manager == null || !allowed) {
+            handler.post { finish(null, false) }
+            return
+        }
+        var asked = false
+        for (provider in listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)) {
+            runCatching {
+                if (manager.isProviderEnabled(provider)) {
+                    manager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper())
+                    asked = true
+                }
+            }
+        }
+        if (!asked) {
+            handler.post { finish(null, false) }
+            return
+        }
+        handler.postDelayed({ finish(null, false) }, timeoutMs)
+    }
+
+    /** [locateText], but with a fresh position when one comes within 20 seconds. */
+    fun locateFresh(context: Context, done: (String) -> Unit) {
+        val app = context.applicationContext
+        freshPosition(app, 20_000L) { where, fresh ->
+            done(
+                if (where == null) {
+                    "SonderAssist: no position yet - location may be off. ${battery(app)}"
+                } else {
+                    val link = "https://maps.google.com/?q=${where.latitude},${where.longitude}"
+                    val age = if (fresh) "now" else "${(System.currentTimeMillis() - where.time) / 60_000} min ago"
+                    "SonderAssist: ${where.latitude}, ${where.longitude} " +
+                        "(±${where.accuracy.toInt()}m, $age) ${battery(app)} $link"
+                },
+            )
         }
     }
 
@@ -354,7 +454,9 @@ object Reporter {
 
     private fun textFor(context: Context, where: Location): String {
         val link = "https://maps.google.com/?q=${where.latitude},${where.longitude}"
-        return "SonderAssist: this phone was taken. ${where.latitude}, " +
+        // Asked for by text, so not "taken": the owner wanted to follow it.
+        val lead = if (extraTo != null) "SonderAssist live:" else "SonderAssist: this phone was taken."
+        return "$lead ${where.latitude}, " +
             "${where.longitude} (±${where.accuracy.toInt()}m) ${battery(context)} $link"
     }
 
@@ -394,7 +496,11 @@ object Reporter {
 
     @SuppressLint("MissingPermission")
     private fun sendSms(context: Context, text: String) {
-        val number = Settings.smsNumber(context)
+        sendSmsTo(context, Settings.smsNumber(context), text)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun sendSmsTo(context: Context, number: String, text: String) {
         if (number.isBlank()) return
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS)
             != PackageManager.PERMISSION_GRANTED

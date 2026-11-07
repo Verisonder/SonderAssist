@@ -75,6 +75,8 @@ object Settings {
     private const val CMD_FIND = "cmd_find"
     private const val CMD_COUNTDOWN = "cmd_countdown"
     private const val CMD_PLAY = "cmd_play"
+    private const val CMD_LIVE = "cmd_live"
+    private const val CMD_STOP = "cmd_stop"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -820,6 +822,8 @@ object Settings {
         val find: String,
         val countdown: String,
         val play: String,
+        val live: String,
+        val stop: String,
     )
 
     fun commandWords(context: Context): CommandWords {
@@ -833,6 +837,8 @@ object Settings {
             countdown = get(CMD_COUNTDOWN, "sec"),
             // Blank is a real answer here: no clip command.
             play = p.getString(CMD_PLAY, "friday")?.trim().orEmpty(),
+            live = get(CMD_LIVE, "live"),
+            stop = get(CMD_STOP, "stop"),
         )
     }
 
@@ -845,6 +851,8 @@ object Settings {
             .putString(CMD_FIND, clean(words.find))
             .putString(CMD_COUNTDOWN, clean(words.countdown))
             .putString(CMD_PLAY, clean(words.play))
+            .putString(CMD_LIVE, clean(words.live))
+            .putString(CMD_STOP, clean(words.stop))
             .apply()
     }
 

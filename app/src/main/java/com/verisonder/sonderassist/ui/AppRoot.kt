@@ -1527,6 +1527,8 @@ fun AppRoot(activity: ComponentActivity) {
                         Text("Commands", style = MaterialTheme.typography.bodyLarge)
                         listOf<Triple<String, String, (String) -> Settings.CommandWords>>(
                             Triple("Send the location", cmdWords.locate, { v: String -> cmdWords.copy(locate = v) }),
+                            Triple("Live location", cmdWords.live, { v: String -> cmdWords.copy(live = v) }),
+                            Triple("Stop the location", cmdWords.stop, { v: String -> cmdWords.copy(stop = v) }),
                             Triple("Lock", cmdWords.lock, { v: String -> cmdWords.copy(lock = v) }),
                             Triple("Ring to find it", cmdWords.find, { v: String -> cmdWords.copy(find = v) }),
                             Triple("Countdown: after the number", cmdWords.countdown, { v: String -> cmdWords.copy(countdown = v) }),
