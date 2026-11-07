@@ -12,4 +12,4 @@
     is missing, this file is not doing its job.
 -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@raw/friday_alert" />
+    tools:keep="@raw/friday_alert,@raw/friday_ok_boss,@raw/friday_ok_sir" />

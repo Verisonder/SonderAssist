@@ -273,6 +273,8 @@ class AlertActivity : ComponentActivity() {
                 setBackgroundColor(android.graphics.Color.BLACK)
                 addView(field, MATCH)
                 addView(words, MATCH)
+                // The F.R.I.D.A.Y countdown wheel. Draws nothing until one is asked for.
+                addView(CountdownView(this@AlertActivity), MATCH)
                 addView(hud, MATCH)
             }
         )

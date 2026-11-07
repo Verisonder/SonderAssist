@@ -56,6 +56,21 @@ object Friday {
     private var wake: PowerManager.WakeLock? = null
     private val muted = mutableListOf<Int>()
 
+    /**
+     * The trigger word has been heard during this alert. From then on a bare "10 seconds"
+     * is a command too, and the word alone does not play the clip again.
+     */
+    private var awake = false
+    private var clipPlayed = false
+
+    /** For the countdown wheel on the alert screen: when the siren is due, and from how long. */
+    @Volatile var countdownEndsAt = 0L
+        private set
+    @Volatile var countdownTotalMs = 0L
+        private set
+    @Volatile var sirenOn = false
+        private set
+
     // ------------------------------------------------------------------ the voice
 
     /** After a grab, in F.R.I.D.A.Y mode. */
@@ -73,6 +88,9 @@ object Friday {
             return
         }
         Settings.noteFriday(app, "listening for 60 s", fresh = true)
+        // A new alert: the word has to be said again, and the clip gets its one play.
+        awake = false
+        clipPlayed = false
         listening = true
         extend(app)
         startOnce()
@@ -131,6 +149,7 @@ object Friday {
             val app = app ?: return
             val words = Settings.fridayWords(app)
             val command = heard.firstNotNullOfOrNull { parse(it, words) }
+                ?: if (awake) heard.firstNotNullOfOrNull { countdownIn(it) } else null
             if (command == null) {
                 heard.firstOrNull()?.takeIf { it.isNotBlank() }?.let {
                     Settings.noteFriday(app, "heard \"${it.take(40)}\"")
@@ -138,7 +157,7 @@ object Friday {
                 restart()
                 return
             }
-            Settings.noteFriday(app, "heard \"${heard.first { parse(it, words) != null }.take(40)}\"")
+            Settings.noteFriday(app, "heard \"${heard.first().take(40)}\"")
             act(app, command, byVoice = true)
         }
 
@@ -198,7 +217,12 @@ object Friday {
                 Regex("""\b${Regex.escape(word.lowercase())}\b""").find(t)?.range?.last
             }
             .minOrNull() ?: return null
-        val tokens = Regex("""[a-z]+|\d+""").findAll(t.substring(end + 1))
+        return countdownIn(t.substring(end + 1)) ?: Command.Play
+    }
+
+    /** "10 seconds", "thirty", "a minute" - the number part alone, or null if there is none. */
+    fun countdownIn(text: String): Command.Countdown? {
+        val tokens = Regex("""[a-z]+|\d+""").findAll(text.lowercase().replace('-', ' '))
             .map { it.value }
             .toList()
         val words = mapOf(
@@ -215,7 +239,7 @@ object Friday {
             val seconds = if (minutes) n * 60 else n
             if (seconds > 0) return Command.Countdown(seconds.coerceAtMost(3_600))
         }
-        return Command.Play
+        return null
     }
 
     /** For texts: the command has to start with one of the words, not merely contain it. */
@@ -228,15 +252,27 @@ object Friday {
     }
 
     /** From a text command. Works whether or not anything is listening. */
-    fun command(context: Context, command: Command) {
+    fun command(context: Context, command: Command): Boolean {
         val app = context.applicationContext
         this.app = app
-        act(app, command, byVoice = false)
+        return act(app, command, byVoice = false)
     }
 
-    private fun act(app: Context, command: Command, byVoice: Boolean) {
+    /** True if something was played or started; false for a repeated wake word. */
+    private fun act(app: Context, command: Command, byVoice: Boolean): Boolean {
         when (command) {
             Command.Play -> {
+                awake = true
+                if (clipPlayed) {
+                    // Once per alert. Said again it only keeps it listening.
+                    Settings.noteFriday(app, "awake - waiting for a command")
+                    if (byVoice) {
+                        extend(app)
+                        restart()
+                    }
+                    return false
+                }
+                clipPlayed = true
                 Settings.noteFriday(app, "playing the clip")
                 if (byVoice) {
                     // Not listening to its own voice; the minute starts again after.
@@ -255,28 +291,41 @@ object Friday {
                 endListening(null)
                 cancelCountdown()
                 Settings.noteFriday(app, "siren in ${command.seconds} s")
+                // One of the two replies, at random.
+                Alarm.playAck(app)
                 holdAwake(app, command.seconds * 1000L + 10_000)
+                val ms = command.seconds * 1000L
+                countdownTotalMs = ms
+                countdownEndsAt = SystemClock.elapsedRealtime() + ms
+                sirenOn = false
                 val task = Runnable {
                     countdown = null
+                    sirenOn = true
                     Settings.noteFriday(app, "siren on")
                     Alarm.siren(app)
                     releaseAwake()
                 }
                 countdown = task
-                handler.postDelayed(task, command.seconds * 1000L)
+                handler.postDelayed(task, ms)
             }
         }
+        return true
     }
 
     private fun cancelCountdown() {
         countdown?.let { handler.removeCallbacks(it) }
         countdown = null
+        countdownEndsAt = 0L
+        countdownTotalMs = 0L
     }
 
     /** Unlocking, or the owner's gesture: everything stops. The sound is [Alarm.stop]'s. */
     fun stopAll() {
         val wasActive = listening || countdown != null
         cancelCountdown()
+        sirenOn = false
+        awake = false
+        clipPlayed = false
         endListening(null)
         releaseAwake()
         app?.let { if (wasActive) Settings.noteFriday(it, "stopped - phone unlocked") }

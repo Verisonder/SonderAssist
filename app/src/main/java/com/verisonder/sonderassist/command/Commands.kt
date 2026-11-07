@@ -67,10 +67,12 @@ object Commands {
         val first = triggers.firstOrNull() ?: "friday"
 
         val answer = when {
-            friday is Friday.Command.Play -> {
-                Friday.command(context, friday)
-                "SonderAssist: playing F.R.I.D.A.Y."
-            }
+            friday is Friday.Command.Play ->
+                if (Friday.command(context, friday)) {
+                    "SonderAssist: playing F.R.I.D.A.Y."
+                } else {
+                    "SonderAssist: F.R.I.D.A.Y already played for this alert."
+                }
             friday is Friday.Command.Countdown -> {
                 Friday.command(context, friday)
                 "SonderAssist: siren in ${friday.seconds}s. Unlock to stop it."

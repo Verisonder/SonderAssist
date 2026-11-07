@@ -120,6 +120,14 @@ object Alarm {
         play(app, uri, loop = false) { done() }
     }
 
+    /** "OK boss" or "OK sir", one of the two at random, once, at full alarm volume. */
+    @Synchronized
+    fun playAck(context: Context) {
+        val app = context.applicationContext
+        val res = if (kotlin.random.Random.nextBoolean()) R.raw.friday_ok_boss else R.raw.friday_ok_sir
+        play(app, Uri.parse("android.resource://${app.packageName}/$res"), loop = false) {}
+    }
+
     /**
      * The siren at the end of a F.R.I.D.A.Y countdown: the chosen sound or the phone's
      * alarm, looped at full volume until the phone is unlocked (five minutes at most).
