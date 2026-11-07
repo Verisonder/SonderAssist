@@ -31,6 +31,17 @@ object Alarm {
     private var pending: Runnable? = null
     private var previousVolume: Int? = null
 
+    /**
+     * The find-my-phone ring is playing. It is the one sound that can start on a phone that
+     * is already unlocked, where unlocking cannot be what stops it - so it also stops on the
+     * power button and from its own notification.
+     */
+    @Volatile var findRinging = false
+        private set
+
+    private const val RING_CHANNEL = "ring"
+    private const val RING_NOTIFICATION_ID = 6
+
     /** Held so the volume can be put back without the caller having to remember to. */
     private var appContext: Context? = null
 
@@ -107,6 +118,44 @@ object Alarm {
         val task = Runnable { stop() }
         pending = task
         handler.postDelayed(task, seconds * 1000L)
+        findRinging = player != null
+        if (findRinging) showRingNotification(app)
+    }
+
+    /** Stop the ring only - never the theft siren or the F.R.I.D.A.Y sounds. */
+    @Synchronized
+    fun stopFindRing() {
+        if (findRinging) stop()
+    }
+
+    private fun showRingNotification(app: Context) {
+        val manager = app.getSystemService(android.app.NotificationManager::class.java) ?: return
+        manager.createNotificationChannel(
+            android.app.NotificationChannel(
+                RING_CHANNEL,
+                "Ringing to find the phone",
+                android.app.NotificationManager.IMPORTANCE_HIGH,
+            ).apply { setSound(null, null) }
+        )
+        val stop = android.app.PendingIntent.getBroadcast(
+            app,
+            0,
+            android.content.Intent(app, StopRingReceiver::class.java),
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE,
+        )
+        manager.notify(
+            RING_NOTIFICATION_ID,
+            androidx.core.app.NotificationCompat.Builder(app, RING_CHANNEL)
+                .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+                .setContentTitle("Ringing to find your phone")
+                .setContentText("Tap Stop, or press the power button.")
+                .setPriority(androidx.core.app.NotificationCompat.PRIORITY_HIGH)
+                .setCategory(androidx.core.app.NotificationCompat.CATEGORY_ALARM)
+                .setVisibility(androidx.core.app.NotificationCompat.VISIBILITY_PUBLIC)
+                .setOngoing(true)
+                .addAction(0, "Stop", stop)
+                .build(),
+        )
     }
 
     /**
@@ -148,6 +197,7 @@ object Alarm {
 
     private fun play(app: Context, uri: Uri, loop: Boolean, done: () -> Unit) {
         appContext = app
+        stopFindRingQuietly(app)
         cancelPending()
         player?.runCatching { stop(); release() }
         player = null
@@ -187,6 +237,11 @@ object Alarm {
 
     @Synchronized
     fun stop() {
+        if (findRinging) {
+            findRinging = false
+            appContext?.getSystemService(android.app.NotificationManager::class.java)
+                ?.cancel(RING_NOTIFICATION_ID)
+        }
         cancelPending()
         player?.runCatching { stop(); release() }
         player = null
@@ -196,6 +251,7 @@ object Alarm {
     @Synchronized
     private fun start(context: Context) {
         pending = null
+        stopFindRingQuietly(context.applicationContext)
         val audio = context.getSystemService(AudioManager::class.java)
         // The alarm stream, not the ringer: a phone worth taking is very often on silent
         // and a siren nobody can hear is decoration.
@@ -245,6 +301,13 @@ object Alarm {
             // from the sound being switched off. Recorded so the phone can say which.
             CrashLog.record(context, "The alarm could not play $uri", it)
         }.getOrNull()
+    }
+
+    /** Another sound is taking over: the ring's notification goes with it. */
+    private fun stopFindRingQuietly(app: Context) {
+        if (!findRinging) return
+        findRinging = false
+        app.getSystemService(android.app.NotificationManager::class.java)?.cancel(RING_NOTIFICATION_ID)
     }
 
     private fun cancelPending() {

@@ -218,6 +218,11 @@
             android:name=".learn.LabelReceiver"
             android:exported="false" />
 
+        <!-- Stop button on the find-my-phone ring. -->
+        <receiver
+            android:name=".media.StopRingReceiver"
+            android:exported="false" />
+
         <!-- Hands the alert log to the share sheet. Reaches the export folder and nothing else. -->
         <provider
             android:name="androidx.core.content.FileProvider"

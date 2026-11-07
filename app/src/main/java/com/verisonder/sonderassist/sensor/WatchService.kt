@@ -119,12 +119,17 @@ class WatchService : Service(), SensorEventListener {
                     startListening()
                 }
 
-                Intent.ACTION_SCREEN_OFF -> stopListening()
+                Intent.ACTION_SCREEN_OFF -> {
+                    // The power button stops the find-my-phone ring, nothing else.
+                    Alarm.stopFindRing()
+                    stopListening()
+                }
 
                 // The screen has come back while an alert is still standing. Put it up
                 // again: the home gesture sends this task to the background, so there is
                 // nothing left to resume on its own and the keyguard is all that shows.
                 Intent.ACTION_SCREEN_ON -> {
+                    Alarm.stopFindRing()
                     if (Settings.alertLive(this@WatchService)) {
                         showAlert(notify = false)
                         // A quiet alert stays quiet when it finally appears. Without this
