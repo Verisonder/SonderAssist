@@ -72,6 +72,7 @@ import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.sensor.WatchService
 import com.verisonder.sonderassist.learn.AlertLog
+import com.verisonder.sonderassist.learn.AlertRecord
 
 /**
  * One screen.
@@ -132,6 +133,17 @@ fun AppRoot(activity: ComponentActivity) {
     var learnCounts by remember { mutableStateOf(AlertLog.counts(activity)) }
     var learnPending by remember { mutableStateOf(AlertLog.pending(activity)) }
     var confirmClearLog by remember { mutableStateOf(false) }
+    // Clearing asks twice: once to start, once more with what is about to go.
+    var confirmClearAgain by remember { mutableStateOf(false) }
+    var alertEntries by remember { mutableStateOf(AlertLog.entries(activity)) }
+    var openAlert by remember { mutableStateOf<Long?>(null) }
+    // Every answer goes through here, so the counts, the list and the prompt never disagree.
+    val answerAlert = { id: Long, label: String ->
+        AlertLog.label(activity, id, label)
+        learnPending = AlertLog.pending(activity)
+        learnCounts = AlertLog.counts(activity)
+        alertEntries = AlertLog.entries(activity)
+    }
     var tether by remember { mutableStateOf(Settings.tetherEnabled(activity)) }
     var tetherAddress by remember { mutableStateOf(Settings.tetherAddress(activity)) }
     var tetherGrace by remember { mutableIntStateOf(Settings.tetherGraceSeconds(activity)) }
@@ -311,6 +323,7 @@ fun AppRoot(activity: ComponentActivity) {
                 alertNote = Settings.alertNote(activity)
                 learnCounts = AlertLog.counts(activity)
                 learnPending = AlertLog.pending(activity)
+                alertEntries = AlertLog.entries(activity)
                 reportNote = Settings.reportNote(activity)
                 reportRunning = Settings.reportRunning(activity)
                 pinLive = Settings.livePin(activity) != null
@@ -351,7 +364,7 @@ fun AppRoot(activity: ComponentActivity) {
     // screen instead of closing the app from inside a page.
     val scroll = rememberScrollState()
     LaunchedEffect(page) { scroll.scrollTo(0) }
-    BackHandler(enabled = page != Page.Home) { page = Page.Home }
+    BackHandler(enabled = page != Page.Home) { page = page.up }
 
     Surface(modifier = Modifier.fillMaxSize()) {
     Box(modifier = Modifier.fillMaxSize()) {
@@ -363,7 +376,7 @@ fun AppRoot(activity: ComponentActivity) {
     ) {
         if (page != Page.Home) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { page = Page.Home }) {
+                IconButton(onClick = { page = page.up }) {
                     Icon(Icons.Filled.ArrowBack, contentDescription = "Back")
                 }
                 Text(page.title, style = MaterialTheme.typography.headlineMedium)
@@ -463,7 +476,7 @@ fun AppRoot(activity: ComponentActivity) {
                         Settings.Detector.BOTH -> "v1 + v2"
                     } + " · ${(sensitivity * 100).toInt()}%" +
                         (if (learn) " · learning" else "") +
-                        (if (learn && learnPending != null) " · 1 to answer" else ""),
+                        (if (learn && learnCounts.unanswered > 0) " · ${learnCounts.unanswered} to answer" else ""),
                 ) { page = Page.Detection }
                 HorizontalDivider()
                 PageRow(
@@ -620,26 +633,32 @@ fun AppRoot(activity: ComponentActivity) {
                     val waiting = learnPending
                     if (waiting != null) {
                         Spacer(Modifier.height(8.dp))
-                        Text("Last alert: was it a theft?", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Last alert, ${alertTime(waiting)}: was it a theft?",
+                            style = MaterialTheme.typography.bodyLarge,
+                        )
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilledTonalButton(onClick = {
-                                AlertLog.label(activity, waiting, AlertLog.THEFT)
-                                learnPending = null
-                                learnCounts = AlertLog.counts(activity)
-                            }) { Text("Theft") }
-                            FilledTonalButton(onClick = {
-                                AlertLog.label(activity, waiting, AlertLog.FALSE)
-                                learnPending = null
-                                learnCounts = AlertLog.counts(activity)
-                            }) { Text("False alarm") }
+                            FilledTonalButton(onClick = { answerAlert(waiting, AlertLog.THEFT) }) {
+                                Text("Theft")
+                            }
+                            FilledTonalButton(onClick = { answerAlert(waiting, AlertLog.FALSE) }) {
+                                Text("False alarm")
+                            }
                         }
                     }
+                    Spacer(Modifier.height(8.dp))
+                    FilledTonalButton(onClick = {
+                        alertEntries = AlertLog.entries(activity)
+                        page = Page.Alerts
+                    }) { Text("See every alert") }
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Button(onClick = { shareAlertLog(activity) }) { Text("Share") }
                         TextButton(onClick = { confirmClearLog = true }) { Text("Clear") }
                     }
                 }
+                }
+
                 if (confirmClearLog) {
                     AlertDialog(
                         onDismissRequest = { confirmClearLog = false },
@@ -647,10 +666,8 @@ fun AppRoot(activity: ComponentActivity) {
                         text = { Text("Every saved alert is deleted.") },
                         confirmButton = {
                             TextButton(onClick = {
-                                AlertLog.clear(activity)
-                                learnCounts = AlertLog.counts(activity)
-                                learnPending = null
                                 confirmClearLog = false
+                                confirmClearAgain = true
                             }) { Text("Clear") }
                         },
                         dismissButton = {
@@ -658,6 +675,163 @@ fun AppRoot(activity: ComponentActivity) {
                         },
                     )
                 }
+                if (confirmClearAgain) {
+                    AlertDialog(
+                        onDismissRequest = { confirmClearAgain = false },
+                        title = { Text("Sure?") },
+                        text = {
+                            Text(
+                                "${learnCounts.theft + learnCounts.falseAlarm + learnCounts.unanswered} alerts, " +
+                                    "${learnCounts.unanswered} unanswered. This cannot be undone.",
+                            )
+                        },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                AlertLog.clear(activity)
+                                learnCounts = AlertLog.counts(activity)
+                                learnPending = null
+                                alertEntries = emptyList()
+                                confirmClearAgain = false
+                            }) { Text("Delete all") }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { confirmClearAgain = false }) { Text("Keep") }
+                        },
+                    )
+                }
+
+                if (page == Page.Alerts) {
+                    Text(
+                        "${learnCounts.falseAlarm} false · ${learnCounts.theft} theft · " +
+                            "${learnCounts.unanswered} unanswered",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    if (alertEntries.isEmpty()) {
+                        Spacer(Modifier.height(12.dp))
+                        Text("No alerts saved.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    alertEntries.forEach { entry ->
+                        Spacer(Modifier.height(12.dp))
+                        HorizontalDivider()
+                        Spacer(Modifier.height(12.dp))
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    openAlert = entry.id
+                                    page = Page.Alert
+                                },
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                alertTime(entry.id),
+                                style = MaterialTheme.typography.bodyLarge,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Text(
+                                labelText(entry.label),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (entry.label == null) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
+                        if (entry.label == null) {
+                            Spacer(Modifier.height(6.dp))
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FilledTonalButton(onClick = { answerAlert(entry.id, AlertLog.THEFT) }) {
+                                    Text("Theft")
+                                }
+                                FilledTonalButton(onClick = { answerAlert(entry.id, AlertLog.FALSE) }) {
+                                    Text("False alarm")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                if (page == Page.Alert) {
+                    val id = openAlert
+                    val text = remember(id) { id?.let { AlertLog.read(activity, it) } }
+                    val parsed = remember(text) {
+                        text?.let { runCatching { AlertRecord.parse(it) }.getOrNull() }
+                    }
+                    val label = alertEntries.firstOrNull { it.id == id }?.label
+                    if (id == null || text == null || parsed == null) {
+                        Text("This alert is no longer saved.", style = MaterialTheme.typography.bodyMedium)
+                    } else {
+                        val (header, samples) = parsed
+                        Text(alertTime(id), style = MaterialTheme.typography.titleMedium)
+                        Text(labelText(label), style = MaterialTheme.typography.bodyMedium)
+                        Spacer(Modifier.height(8.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilledTonalButton(onClick = { answerAlert(id, AlertLog.THEFT) }) {
+                                Text(if (label == AlertLog.THEFT) "✓ Theft" else "Theft")
+                            }
+                            FilledTonalButton(onClick = { answerAlert(id, AlertLog.FALSE) }) {
+                                Text(if (label == AlertLog.FALSE) "✓ False alarm" else "False alarm")
+                            }
+                        }
+
+                        Spacer(Modifier.height(20.dp))
+                        Text("Movement", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Top-edge acceleration (bright), total (dim). Line: where it fired.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        AlertChart(samples, header["trigger_ns"]?.toLongOrNull())
+
+                        Spacer(Modifier.height(20.dp))
+                        Text("What it saw", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.height(4.dp))
+                        listOf(
+                            "Fired by" to header["by"],
+                            "Acceleration" to header["value"],
+                            "Twist (rad/s)" to header["rotation"],
+                            "Detectors on" to header["detectors"],
+                            "Sensitivity" to header["sensitivity"]?.toFloatOrNull()
+                                ?.let { "${(it * 100).toInt()}%" },
+                            "Upright guard" to header["upright_guard"],
+                            "Sample rate (Hz)" to header["rate_hz"],
+                            "Samples" to samples.size.toString(),
+                            "Readout" to header["readout"],
+                            "App" to header["app"],
+                        ).forEach { (k, v) ->
+                            if (v != null) {
+                                Row(modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        k,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        modifier = Modifier.weight(0.4f),
+                                    )
+                                    Text(
+                                        v,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        modifier = Modifier.weight(0.6f),
+                                    )
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(20.dp))
+                        var showRaw by remember(id) { mutableStateOf(false) }
+                        TextButton(onClick = { showRaw = !showRaw }) {
+                            Text(if (showRaw) "Hide raw data" else "Show raw data")
+                        }
+                        if (showRaw) {
+                            Text(
+                                text,
+                                style = MaterialTheme.typography.bodySmall.copy(
+                                    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+                                ),
+                            )
+                        }
+                    }
                 }
 
                 if (page == Page.Strap) {
@@ -1972,6 +2146,67 @@ private fun shareAlertLog(activity: ComponentActivity) {
     }
 }
 
+/** "Sat 7 Nov, 14:12:05" from an alert id, which is its wall-clock time. */
+private fun alertTime(id: Long): String =
+    java.text.SimpleDateFormat("EEE d MMM, HH:mm:ss", java.util.Locale.US).format(java.util.Date(id))
+
+private fun labelText(label: String?): String = when (label) {
+    AlertLog.THEFT -> "Theft"
+    AlertLog.FALSE -> "False alarm"
+    else -> "Unanswered"
+}
+
+/**
+ * The recording around one alert: acceleration toward the top edge (what the detector
+ * watches) and the total, with a line at the trigger.
+ */
+@Composable
+private fun AlertChart(samples: List<com.verisonder.sonderassist.detect.Sample>, triggerNs: Long?) {
+    if (samples.size < 2) {
+        Text("Too few samples to draw.", style = MaterialTheme.typography.bodySmall)
+        return
+    }
+    val bright = MaterialTheme.colorScheme.primary
+    val dim = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+    val mark = MaterialTheme.colorScheme.error
+    val axis = MaterialTheme.colorScheme.outlineVariant
+    androidx.compose.foundation.Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(180.dp),
+    ) {
+        val t0 = samples.first().timestampNs
+        val span = (samples.last().timestampNs - t0).coerceAtLeast(1L).toFloat()
+        val ys = samples.map { it.ay } + samples.map { it.accelMagnitude }
+        val lo = minOf(ys.min(), 0f)
+        val hi = maxOf(ys.max(), 1f)
+        val range = (hi - lo).coerceAtLeast(1f)
+        fun x(ns: Long) = (ns - t0) / span * size.width
+        fun y(v: Float) = size.height - (v - lo) / range * size.height
+
+        drawLine(axis, androidx.compose.ui.geometry.Offset(0f, y(0f)),
+            androidx.compose.ui.geometry.Offset(size.width, y(0f)), strokeWidth = 1f)
+
+        fun path(value: (com.verisonder.sonderassist.detect.Sample) -> Float) =
+            androidx.compose.ui.graphics.Path().apply {
+                samples.forEachIndexed { i, s ->
+                    if (i == 0) moveTo(x(s.timestampNs), y(value(s)))
+                    else lineTo(x(s.timestampNs), y(value(s)))
+                }
+            }
+        drawPath(path { it.accelMagnitude }, dim,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f))
+        drawPath(path { it.ay }, bright,
+            style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3f))
+
+        if (triggerNs != null && triggerNs in t0..samples.last().timestampNs) {
+            val tx = x(triggerNs)
+            drawLine(mark, androidx.compose.ui.geometry.Offset(tx, 0f),
+                androidx.compose.ui.geometry.Offset(tx, size.height), strokeWidth = 3f)
+        }
+    }
+}
+
 @Composable
 private fun SectionLabel(text: String) {
     Text(
@@ -2032,6 +2267,17 @@ private enum class Page(val title: String) {
     Find("Find my phone"),
     Power("Power menu"),
     Running("Keep it running"),
+    Alerts("Alerts"),
+    Alert("Alert"),
+    ;
+
+    /** Where back goes: the alert list sits under Detection, one alert under the list. */
+    val up: Page
+        get() = when (this) {
+            Alerts -> Detection
+            Alert -> Alerts
+            else -> Home
+        }
 }
 
 /** A row on the home screen: the page's name, what is on there now, and the way in. */

@@ -75,9 +75,27 @@ object AlertLog {
     fun label(context: Context, id: Long, label: String) {
         val edit = labels(context).edit().putString(id.toString(), label)
         if (pending(context) == id) edit.remove(PENDING)
-        edit.apply()
+        // commit: the screen reads the counts straight back.
+        edit.commit()
         context.getSystemService(NotificationManager::class.java)?.cancel(ASK_ID)
     }
+
+    /** One saved alert: when (the id is the wall-clock time) and its answer, if any. */
+    data class Entry(val id: Long, val label: String?)
+
+    /** Every saved alert, newest first. */
+    fun entries(context: Context): List<Entry> {
+        val prefs = labels(context)
+        return files(context).mapNotNull { f ->
+            f.nameWithoutExtension.toLongOrNull()?.let { Entry(it, prefs.getString(f.nameWithoutExtension, null)) }
+        }.sortedByDescending { it.id }
+    }
+
+    /** The saved recording of one alert, or null if it is gone. */
+    fun read(context: Context, id: Long): String? =
+        runCatching { File(dir(context), "$id.txt").readText() }.getOrNull()
+
+    fun labelOf(context: Context, id: Long): String? = labels(context).getString(id.toString(), null)
 
     data class Counts(val theft: Int, val falseAlarm: Int, val unanswered: Int)
 
