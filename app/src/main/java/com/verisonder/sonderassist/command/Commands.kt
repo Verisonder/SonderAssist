@@ -62,35 +62,38 @@ object Commands {
 
         val rest = text.substring(word.length).trim()
         val command = rest.substringBefore(' ').lowercase()
-        val triggers = Settings.fridayWords(context)
-        val friday = Friday.parse(rest, triggers)?.takeIf { Friday.startsWithTrigger(rest, triggers) }
-        val first = triggers.firstOrNull() ?: "friday"
+        val w = Settings.commandWords(context)
+        // "10sec" or "10 sec": the number, then the countdown word.
+        val seconds = Regex("""^(\d+)\s*${Regex.escape(w.countdown)}""")
+            .find(rest.lowercase())?.groupValues?.get(1)?.toIntOrNull()
+            ?.takeIf { it > 0 }?.coerceAtMost(3_600)
+        val list = listOfNotNull(w.locate, w.lock, w.find, "10${w.countdown}", w.play.ifEmpty { null }, "help")
+            .joinToString(" | ")
 
         val answer = when {
-            friday is Friday.Command.Play ->
-                if (Friday.command(context, friday)) {
+            seconds != null -> {
+                Friday.command(context, Friday.Command.Countdown(seconds))
+                "SonderAssist: siren in ${seconds}s. Unlock to stop it."
+            }
+            w.play.isNotEmpty() && command == w.play ->
+                if (Friday.command(context, Friday.Command.Play)) {
                     "SonderAssist: playing F.R.I.D.A.Y."
                 } else {
                     "SonderAssist: F.R.I.D.A.Y already played for this alert."
                 }
-            friday is Friday.Command.Countdown -> {
-                Friday.command(context, friday)
-                "SonderAssist: siren in ${friday.seconds}s. Unlock to stop it."
-            }
-            command == "" || command == "help" ->
-                "SonderAssist commands: $word locate | ring | lock | $first | $first 10 | help"
-            command == "locate" -> Reporter.locateText(context)
-            command == "ring" -> {
+            command == "" || command == "help" -> "SonderAssist commands: $word $list"
+            command == w.locate -> Reporter.locateText(context)
+            command == w.find -> {
                 Alarm.ringNow(context)
                 "SonderAssist: ringing now for 30s."
             }
-            command == "lock" ->
+            command == w.lock ->
                 if (DeviceAdminLocker.lockNow(context)) {
                     "SonderAssist: locked."
                 } else {
                     "SonderAssist: could not lock - device admin is off or no screen lock is set."
                 }
-            else -> "SonderAssist: unknown command '$command'. Try locate, ring, lock, $first or help."
+            else -> "SonderAssist: unknown command '$command'. Try $list."
         }
 
         // Arrival is logged before the reply is attempted, so "got the command but could not

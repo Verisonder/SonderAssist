@@ -70,6 +70,11 @@ object Settings {
     private const val CHAT_COMMANDS = "chat_commands"
     private const val COUNTDOWN_LABEL = "countdown_label"
     private const val COUNTDOWN_END = "countdown_end"
+    private const val CMD_LOCATE = "cmd_locate"
+    private const val CMD_LOCK = "cmd_lock"
+    private const val CMD_FIND = "cmd_find"
+    private const val CMD_COUNTDOWN = "cmd_countdown"
+    private const val CMD_PLAY = "cmd_play"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -802,6 +807,45 @@ object Settings {
 
     fun setCountdownEnd(context: Context, value: String) {
         of(context).edit().putString(COUNTDOWN_END, value.trim().replace("\n", " ")).apply()
+    }
+
+    /**
+     * The text commands, as the owner named them. [countdown] is what follows the number:
+     * "sec" makes "10sec" (or "10 sec") start a 10-second countdown. [play] plays the
+     * F.R.I.D.A.Y clip; blank turns that command off.
+     */
+    data class CommandWords(
+        val locate: String,
+        val lock: String,
+        val find: String,
+        val countdown: String,
+        val play: String,
+    )
+
+    fun commandWords(context: Context): CommandWords {
+        val p = of(context)
+        fun get(key: String, default: String) =
+            p.getString(key, null)?.trim()?.takeIf { it.isNotEmpty() } ?: default
+        return CommandWords(
+            locate = get(CMD_LOCATE, "locate"),
+            lock = get(CMD_LOCK, "lock"),
+            find = get(CMD_FIND, "find"),
+            countdown = get(CMD_COUNTDOWN, "sec"),
+            // Blank is a real answer here: no clip command.
+            play = p.getString(CMD_PLAY, "friday")?.trim().orEmpty(),
+        )
+    }
+
+    fun setCommandWords(context: Context, words: CommandWords) {
+        // One word each; a space would make the command unreachable.
+        fun clean(s: String) = s.trim().substringBefore(' ').lowercase()
+        of(context).edit()
+            .putString(CMD_LOCATE, clean(words.locate))
+            .putString(CMD_LOCK, clean(words.lock))
+            .putString(CMD_FIND, clean(words.find))
+            .putString(CMD_COUNTDOWN, clean(words.countdown))
+            .putString(CMD_PLAY, clean(words.play))
+            .apply()
     }
 
     fun setChatCommands(context: Context, value: Boolean) {

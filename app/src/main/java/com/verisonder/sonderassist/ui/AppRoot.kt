@@ -227,6 +227,7 @@ fun AppRoot(activity: ComponentActivity) {
     var newWord by remember { mutableStateOf("") }
     var countdownLabel by remember { mutableStateOf(Settings.countdownLabel(activity)) }
     var countdownEnd by remember { mutableStateOf(Settings.countdownEnd(activity)) }
+    var cmdWords by remember { mutableStateOf(Settings.commandWords(activity)) }
     var chatCommands by remember { mutableStateOf(Settings.chatCommands(activity)) }
     var chatAccess by remember { mutableStateOf(ChatCommandListener.hasAccess(activity)) }
     var hasMic by remember {
@@ -1517,9 +1518,30 @@ fun AppRoot(activity: ComponentActivity) {
                         )
 
                         Spacer(Modifier.height(12.dp))
+                        Text("Commands", style = MaterialTheme.typography.bodyLarge)
+                        listOf<Triple<String, String, (String) -> Settings.CommandWords>>(
+                            Triple("Send the location", cmdWords.locate, { v: String -> cmdWords.copy(locate = v) }),
+                            Triple("Lock", cmdWords.lock, { v: String -> cmdWords.copy(lock = v) }),
+                            Triple("Ring to find it", cmdWords.find, { v: String -> cmdWords.copy(find = v) }),
+                            Triple("Countdown: after the number", cmdWords.countdown, { v: String -> cmdWords.copy(countdown = v) }),
+                            Triple("Play the clip (empty = off)", cmdWords.play, { v: String -> cmdWords.copy(play = v) }),
+                        ).forEach { (label, value, update) ->
+                            OutlinedTextField(
+                                value = value,
+                                onValueChange = { cmdWords = update(it.take(16).replace(" ", "")) },
+                                label = { Text(label) },
+                                singleLine = true,
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                        }
+                        TextButton(onClick = {
+                            Settings.setCommandWords(activity, cmdWords)
+                            cmdWords = Settings.commandWords(activity)
+                        }) { Text("Save commands") }
                         Text(
-                            "Commands: locate, ring, lock, ${fridayWords.first().lowercase()}, ${fridayWords.first().lowercase()} 10, help.",
-                            style = MaterialTheme.typography.bodyLarge,
+                            "e.g. \"$secretWord ${cmdWords.locate}\", \"$secretWord 10${cmdWords.countdown}\".",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
 
                         Spacer(Modifier.height(16.dp))
@@ -1780,7 +1802,7 @@ fun AppRoot(activity: ComponentActivity) {
                         Spacer(Modifier.height(16.dp))
                         Text("Words it answers to", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Said or texted.",
+                            "Said out loud. Texts use the commands under Find my phone.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
