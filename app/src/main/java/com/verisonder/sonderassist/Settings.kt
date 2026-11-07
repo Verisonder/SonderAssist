@@ -790,7 +790,7 @@ object Settings {
 
     /** The words above the countdown number. Blank shows nothing. */
     fun countdownLabel(context: Context): String =
-        of(context).getString(COUNTDOWN_LABEL, "SIREN IN") ?: "SIREN IN"
+        of(context).getString(COUNTDOWN_LABEL, "ALERT IN") ?: "ALERT IN"
 
     fun setCountdownLabel(context: Context, value: String) {
         of(context).edit().putString(COUNTDOWN_LABEL, value.trim().replace("\n", " ")).apply()
@@ -798,7 +798,7 @@ object Settings {
 
     /** The word the wheel shows when the countdown reaches zero. Blank shows nothing. */
     fun countdownEnd(context: Context): String =
-        of(context).getString(COUNTDOWN_END, "SIREN") ?: "SIREN"
+        of(context).getString(COUNTDOWN_END, "ALERT") ?: "ALERT"
 
     fun setCountdownEnd(context: Context, value: String) {
         of(context).edit().putString(COUNTDOWN_END, value.trim().replace("\n", " ")).apply()
