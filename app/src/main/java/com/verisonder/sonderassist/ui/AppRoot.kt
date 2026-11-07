@@ -226,6 +226,7 @@ fun AppRoot(activity: ComponentActivity) {
     var fridayWords by remember { mutableStateOf(Settings.fridayWords(activity)) }
     var newWord by remember { mutableStateOf("") }
     var countdownLabel by remember { mutableStateOf(Settings.countdownLabel(activity)) }
+    var countdownEnd by remember { mutableStateOf(Settings.countdownEnd(activity)) }
     var chatCommands by remember { mutableStateOf(Settings.chatCommands(activity)) }
     var chatAccess by remember { mutableStateOf(ChatCommandListener.hasAccess(activity)) }
     var hasMic by remember {
@@ -1757,8 +1758,21 @@ fun AppRoot(activity: ComponentActivity) {
                                 countdownLabel = Settings.countdownLabel(activity)
                             }) { Text("Save") }
                         }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = countdownEnd,
+                                onValueChange = { countdownEnd = it.take(12) },
+                                label = { Text("Text at zero") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = {
+                                Settings.setCountdownEnd(activity, countdownEnd)
+                                countdownEnd = Settings.countdownEnd(activity)
+                            }) { Text("Save") }
+                        }
                         Text(
-                            "Leave it empty to show only the number.",
+                            "Leave either empty to show nothing there.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

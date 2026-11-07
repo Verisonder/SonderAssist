@@ -35,6 +35,7 @@ class CountdownView(context: Context) : View(context) {
     private var shown = 0f
     private val born = SystemClock.elapsedRealtime()
     private val label = com.verisonder.sonderassist.Settings.countdownLabel(context)
+    private val endWord = com.verisonder.sonderassist.Settings.countdownEnd(context)
 
     private fun dp(v: Float) = v * resources.displayMetrics.density
 
@@ -117,7 +118,7 @@ class CountdownView(context: Context) : View(context) {
         // The number, and what it counts to.
         text.color = a(255)
         text.textSize = r * (if (siren) 0.30f else 0.48f)
-        val big = if (siren) "SIREN" else ceil(leftMs / 1000.0).toInt().toString()
+        val big = if (siren) endWord else ceil(leftMs / 1000.0).toInt().toString()
         canvas.drawText(big, cx, cy + text.textSize * 0.35f, text)
         if (!siren && label.isNotEmpty()) {
             text.color = a(150)

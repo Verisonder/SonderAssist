@@ -69,6 +69,7 @@ object Settings {
     private const val FRIDAY_WORDS = "friday_words"
     private const val CHAT_COMMANDS = "chat_commands"
     private const val COUNTDOWN_LABEL = "countdown_label"
+    private const val COUNTDOWN_END = "countdown_end"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -793,6 +794,14 @@ object Settings {
 
     fun setCountdownLabel(context: Context, value: String) {
         of(context).edit().putString(COUNTDOWN_LABEL, value.trim().replace("\n", " ")).apply()
+    }
+
+    /** The word the wheel shows when the countdown reaches zero. Blank shows nothing. */
+    fun countdownEnd(context: Context): String =
+        of(context).getString(COUNTDOWN_END, "SIREN") ?: "SIREN"
+
+    fun setCountdownEnd(context: Context, value: String) {
+        of(context).edit().putString(COUNTDOWN_END, value.trim().replace("\n", " ")).apply()
     }
 
     fun setChatCommands(context: Context, value: Boolean) {
