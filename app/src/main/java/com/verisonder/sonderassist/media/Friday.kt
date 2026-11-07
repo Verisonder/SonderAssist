@@ -19,7 +19,7 @@ import com.verisonder.sonderassist.Settings
 /**
  * F.R.I.D.A.Y mode: silent after a theft until the owner asks for sound.
  *
- *  - "Friday" plays the clip.
+ *  - "Friday" (or any word the owner adds in [Settings.fridayWords]) plays the clip.
  *  - "Friday 30" (any number of seconds, or "a minute") starts a countdown; when it runs
  *    out the siren starts at full volume and loops until the phone is unlocked.
  *
@@ -109,6 +109,14 @@ object Friday {
             .putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
             .putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             .putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, app.packageName)
+        // Tells the recognizer which words to expect, so a made-up name is less likely to
+        // come out as something else. Android 13 and up.
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            intent.putStringArrayListExtra(
+                RecognizerIntent.EXTRA_BIASING_STRINGS,
+                ArrayList(Settings.fridayWords(app)),
+            )
+        }
         runCatching { r.startListening(intent) }
             .onFailure { endListening("cannot listen - ${it.javaClass.simpleName}") }
     }
@@ -121,7 +129,8 @@ object Friday {
         override fun onResults(results: Bundle?) {
             val heard = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
             val app = app ?: return
-            val command = heard.firstNotNullOfOrNull { parse(it) }
+            val words = Settings.fridayWords(app)
+            val command = heard.firstNotNullOfOrNull { parse(it, words) }
             if (command == null) {
                 heard.firstOrNull()?.takeIf { it.isNotBlank() }?.let {
                     Settings.noteFriday(app, "heard \"${it.take(40)}\"")
@@ -129,7 +138,7 @@ object Friday {
                 restart()
                 return
             }
-            Settings.noteFriday(app, "heard \"${heard.first { parse(it) != null }.take(40)}\"")
+            Settings.noteFriday(app, "heard \"${heard.first { parse(it, words) != null }.take(40)}\"")
             act(app, command, byVoice = true)
         }
 
@@ -182,11 +191,14 @@ object Friday {
      * "friday", "Friday 30", "friday thirty seconds", "friday 1 minute". Null when the word
      * is not there at all.
      */
-    fun parse(text: String): Command? {
+    fun parse(text: String, triggers: List<String>): Command? {
         val t = text.lowercase().replace('-', ' ')
-        val at = t.indexOf("friday")
-        if (at < 0) return null
-        val tokens = Regex("""[a-z]+|\d+""").findAll(t.substring(at + "friday".length))
+        val end = triggers
+            .mapNotNull { word ->
+                Regex("""\b${Regex.escape(word.lowercase())}\b""").find(t)?.range?.last
+            }
+            .minOrNull() ?: return null
+        val tokens = Regex("""[a-z]+|\d+""").findAll(t.substring(end + 1))
             .map { it.value }
             .toList()
         val words = mapOf(
@@ -204,6 +216,15 @@ object Friday {
             if (seconds > 0) return Command.Countdown(seconds.coerceAtMost(3_600))
         }
         return Command.Play
+    }
+
+    /** For texts: the command has to start with one of the words, not merely contain it. */
+    fun startsWithTrigger(text: String, triggers: List<String>): Boolean {
+        val t = text.lowercase().trimStart()
+        return triggers.any { word ->
+            val w = word.lowercase()
+            t.startsWith(w) && (t.length == w.length || !t[w.length].isLetterOrDigit())
+        }
     }
 
     /** From a text command. Works whether or not anything is listening. */

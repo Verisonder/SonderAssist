@@ -9,10 +9,6 @@ import android.provider.Telephony
 import androidx.core.content.ContextCompat
 import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
-import com.verisonder.sonderassist.media.Alarm
-import com.verisonder.sonderassist.media.Friday
-import com.verisonder.sonderassist.report.Reporter
-import com.verisonder.sonderassist.security.DeviceAdminLocker
 
 /**
  * Control the phone by text, from any handset.
@@ -27,19 +23,13 @@ import com.verisonder.sonderassist.security.DeviceAdminLocker
  * further guarded by BROADCAST_SMS in the manifest, so no other app can forge a command.
  * The secret word is what gates the owner's own texts on top of that.
  *
- * It reuses the parts that already exist: [Reporter.locateText] for the position and
- * battery, [Alarm.ringNow] for the sound, [DeviceAdminLocker] for the lock. Nothing new
- * reaches the phone's hardware from here.
+ * The command itself is read and carried out by [Commands], shared with chat/RCS messages.
  */
 class SmsCommandReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) return
         if (!Settings.smsCommands(context)) return
-
-        val word = Settings.secretWord(context)
-        // No word means no gate, and no gate means the phone must not act on anything.
-        if (word.isBlank()) return
 
         val messages = runCatching {
             Telephony.Sms.Intents.getMessagesFromIntent(intent)
@@ -48,68 +38,28 @@ class SmsCommandReceiver : BroadcastReceiver() {
 
         val sender = messages.first().originatingAddress ?: return
         // A long text arrives as several parts; join them back before reading the command.
-        val body = messages.joinToString("") { it.messageBody.orEmpty() }.trim()
+        val body = messages.joinToString("") { it.messageBody.orEmpty() }
 
-        // Case-insensitive on the word and the command, so a keyboard that capitalises the
-        // first letter of a message does not silently break it.
-        if (!body.lowercase().startsWith(word.lowercase())) return
-        // The word matched, so this is meant for the phone: worth a line even when refused,
-        // or "texted from a number not on the list" looks the same as "never arrived".
-        if (!Settings.smsAllowed(context, sender)) {
-            Settings.noteCommand(context, "ignored $sender - not a chosen contact")
-            return
-        }
-        val rest = body.substring(word.length).trim()
-        val command = rest.substringBefore(' ').lowercase()
-
-        val reply = when (command) {
-            "", "help" -> "SonderAssist commands: $word locate | ring | lock | friday | friday 30 | help"
-            "locate" -> Reporter.locateText(context)
-            "ring" -> {
-                Alarm.ringNow(context)
-                "SonderAssist: ringing now for 30s."
-            }
-            "lock" ->
-                if (DeviceAdminLocker.lockNow(context)) {
-                    "SonderAssist: locked."
-                } else {
-                    "SonderAssist: could not lock - device admin is off or no screen lock is set."
-                }
-            "friday" -> when (val f = Friday.parse(rest) ?: Friday.Command.Play) {
-                Friday.Command.Play -> {
-                    Friday.command(context, f)
-                    "SonderAssist: playing F.R.I.D.A.Y."
-                }
-                is Friday.Command.Countdown -> {
-                    Friday.command(context, f)
-                    "SonderAssist: siren in ${f.seconds}s. Unlock to stop it."
-                }
-            }
-            else -> "SonderAssist: unknown command '$command'. Try locate, ring, lock, friday or help."
-        }
-
-        // Arrival is logged before the reply is attempted, so "got the command but could not
-        // text back" is never confused with "never got the command" (an empty trail).
-        Settings.noteCommand(context, "$command from $sender")
-        sendReply(context, sender, reply)
+        Commands.handle(context, body, sender, null, "sms") { text -> sendSms(context, sender, text) }
     }
 
-    private fun sendReply(context: Context, to: String, text: String) {
-        if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS)
-            != PackageManager.PERMISSION_GRANTED
-        ) {
-            Settings.noteCommand(context, "cannot text back - sending not allowed")
-            return
-        }
-        runCatching {
-            val sms = context.getSystemService(android.telephony.SmsManager::class.java)
-            // Over 160 characters a plain send is silently truncated, and on a locate reply
-            // the map link is at the end - the part worth having.
-            sms.sendMultipartTextMessage(to, null, sms.divideMessage(text), null, null)
-            Settings.noteCommand(context, "replied to $to")
-        }.onFailure {
-            CrashLog.record(context, "The command reply could not be sent", it)
-            Settings.noteCommand(context, "reply failed")
+    companion object {
+        /** True if the text went out. */
+        fun sendSms(context: Context, to: String, text: String): Boolean {
+            if (ContextCompat.checkSelfPermission(context, Manifest.permission.SEND_SMS)
+                != PackageManager.PERMISSION_GRANTED
+            ) {
+                Settings.noteCommand(context, "cannot text back - sending not allowed")
+                return false
+            }
+            return runCatching {
+                val sms = context.getSystemService(android.telephony.SmsManager::class.java)
+                // Over 160 characters a plain send is silently truncated, and on a locate
+                // reply the map link is at the end - the part worth having.
+                sms.sendMultipartTextMessage(to, null, sms.divideMessage(text), null, null)
+            }.onFailure {
+                CrashLog.record(context, "The command reply could not be sent", it)
+            }.isSuccess
         }
     }
 }

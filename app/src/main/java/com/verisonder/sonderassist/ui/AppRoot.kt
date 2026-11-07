@@ -67,6 +67,7 @@ import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.Keepalive
 import com.verisonder.sonderassist.security.PowerMenu
+import com.verisonder.sonderassist.command.ChatCommandListener
 import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.sensor.WatchService
@@ -209,6 +210,10 @@ fun AppRoot(activity: ComponentActivity) {
         }
     }
     var fridayNote by remember { mutableStateOf(Settings.fridayNote(activity)) }
+    var fridayWords by remember { mutableStateOf(Settings.fridayWords(activity)) }
+    var newWord by remember { mutableStateOf("") }
+    var chatCommands by remember { mutableStateOf(Settings.chatCommands(activity)) }
+    var chatAccess by remember { mutableStateOf(ChatCommandListener.hasAccess(activity)) }
     var hasMic by remember {
         mutableStateOf(
             androidx.core.content.ContextCompat.checkSelfPermission(
@@ -311,6 +316,7 @@ fun AppRoot(activity: ComponentActivity) {
                 pinLive = Settings.livePin(activity) != null
                 commandNote = Settings.commandNote(activity)
                 fridayNote = Settings.fridayNote(activity)
+                chatAccess = ChatCommandListener.hasAccess(activity)
                 hasMic = androidx.core.content.ContextCompat.checkSelfPermission(
                     activity,
                     android.Manifest.permission.RECORD_AUDIO,
@@ -1311,7 +1317,7 @@ fun AppRoot(activity: ComponentActivity) {
 
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "Commands: locate, ring, lock, friday, friday 30, help.",
+                            "Commands: locate, ring, lock, ${fridayWords.first().lowercase()}, ${fridayWords.first().lowercase()} 30, help.",
                             style = MaterialTheme.typography.bodyLarge,
                         )
 
@@ -1370,6 +1376,36 @@ fun AppRoot(activity: ComponentActivity) {
                                     )
                                 }) { Text("Add a contact") }
                             }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Also read RCS messages", style = MaterialTheme.typography.bodyLarge)
+                                Text(
+                                    "Reads them from the messaging app's notifications.",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
+                            Switch(
+                                checked = chatCommands,
+                                onCheckedChange = {
+                                    chatCommands = it
+                                    Settings.setChatCommands(activity, it)
+                                    if (it && !chatAccess) {
+                                        activity.startActivity(ChatCommandListener.accessIntent())
+                                    }
+                                },
+                            )
+                        }
+                        if (chatCommands && !chatAccess) {
+                            Spacer(Modifier.height(8.dp))
+                            FilledTonalButton(onClick = {
+                                activity.startActivity(ChatCommandListener.accessIntent())
+                            }) { Text("Allow notification access") }
                         }
 
                         Spacer(Modifier.height(12.dp))
@@ -1486,7 +1522,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Column {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "\"Friday\" plays the clip. \"Friday 30\" sets off the siren in 30 s.",
+                            "\"${fridayWords.first()}\" plays the clip. \"${fridayWords.first()} 30\" sets off the siren in 30 s.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -1505,6 +1541,50 @@ fun AppRoot(activity: ComponentActivity) {
                             FilledTonalButton(onClick = {
                                 askMic.launch(android.Manifest.permission.RECORD_AUDIO)
                             }) { Text("Allow the microphone") }
+                        }
+
+                        Spacer(Modifier.height(16.dp))
+                        Text("Words it answers to", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Said or texted.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        fridayWords.forEach { w ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    w,
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                // The last word stays: the mode needs one to be called by.
+                                if (fridayWords.size > 1) {
+                                    TextButton(onClick = {
+                                        Settings.setFridayWords(activity, fridayWords - w)
+                                        fridayWords = Settings.fridayWords(activity)
+                                    }) { Text("Remove") }
+                                }
+                            }
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = newWord,
+                                onValueChange = { newWord = it.take(24) },
+                                label = { Text("New word") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                enabled = newWord.isNotBlank(),
+                                onClick = {
+                                    Settings.setFridayWords(activity, fridayWords + newWord)
+                                    fridayWords = Settings.fridayWords(activity)
+                                    newWord = ""
+                                },
+                            ) { Text("Add") }
                         }
                         Spacer(Modifier.height(8.dp))
                         TextButton(onClick = { Alarm.playFriday(activity) }) {

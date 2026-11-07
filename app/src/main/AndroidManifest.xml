@@ -259,6 +259,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- RCS and chat commands, read from the messaging app's notification. Off until the
+             switch is on and notification access is granted. -->
+        <service
+            android:name=".command.ChatCommandListener"
+            android:exported="true"
+            android:label="SonderAssist commands"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
     </application>
 
 </manifest>

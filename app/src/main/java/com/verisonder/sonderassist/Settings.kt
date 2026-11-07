@@ -65,6 +65,8 @@ object Settings {
     private const val SMS_FROM_ANYONE = "sms_from_anyone"
     private const val SMS_CONTACTS = "sms_contacts"
     private const val FRIDAY_NOTE = "friday_note"
+    private const val FRIDAY_WORDS = "friday_words"
+    private const val CHAT_COMMANDS = "chat_commands"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -738,11 +740,46 @@ object Settings {
      */
     fun numberKey(number: String): String = number.filter { it.isDigit() }.takeLast(9)
 
-    fun smsAllowed(context: Context, sender: String): Boolean {
+    /**
+     * Whether a command is taken from this sender. By number when there is one; a chat
+     * notification often carries only the contact's name, so then by name.
+     */
+    fun commandAllowed(context: Context, number: String?, name: String?): Boolean {
         if (smsFromAnyone(context)) return true
-        val key = numberKey(sender)
-        if (key.isEmpty()) return false
-        return smsContacts(context).any { numberKey(it.number) == key }
+        val contacts = smsContacts(context)
+        val key = number?.let { numberKey(it) }.orEmpty()
+        if (key.isNotEmpty() && contacts.any { numberKey(it.number) == key }) return true
+        val n = name?.trim().orEmpty()
+        return n.isNotEmpty() && contacts.any { it.name.trim().equals(n, ignoreCase = true) }
+    }
+
+    /**
+     * The words F.R.I.D.A.Y answers to, said or texted. "Friday" until the owner changes
+     * the list; never empty, so the mode always has a way to be called.
+     */
+    fun fridayWords(context: Context): List<String> =
+        of(context).getString(FRIDAY_WORDS, null)
+            ?.lines()?.map { it.trim() }?.filter { it.isNotEmpty() }
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf("Friday")
+
+    fun setFridayWords(context: Context, words: List<String>) {
+        val clean = words.map { it.trim().replace("\n", " ") }
+            .filter { it.isNotEmpty() }
+            .distinctBy { it.lowercase() }
+        of(context).edit().apply {
+            if (clean.isEmpty()) remove(FRIDAY_WORDS) else putString(FRIDAY_WORDS, clean.joinToString("\n"))
+        }.apply()
+    }
+
+    /**
+     * Also read commands from messaging-app notifications, which is how RCS and chat
+     * messages reach the app at all. Needs notification access. Off by default.
+     */
+    fun chatCommands(context: Context): Boolean = of(context).getBoolean(CHAT_COMMANDS, false)
+
+    fun setChatCommands(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(CHAT_COMMANDS, value).apply()
     }
 
     /** What F.R.I.D.A.Y heard and did, last six lines. */
