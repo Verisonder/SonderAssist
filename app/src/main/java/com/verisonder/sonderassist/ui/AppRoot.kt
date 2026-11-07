@@ -501,12 +501,19 @@ fun AppRoot(activity: ComponentActivity) {
                 HorizontalDivider()
                 PageRow(
                     "Find my phone",
-                    listOfNotNull(
-                        if (reportRunning || pinLive) "Sending now"
-                        else if (report) "Location on" else null,
-                        if (smsCommands) "Texts on" else null,
-                    ).joinToString(" · ").ifEmpty { "Off" },
+                    if (reportRunning || pinLive) "Sending now"
+                    else if (report) "Location on" else "Off",
                 ) { page = Page.Find }
+                HorizontalDivider()
+                PageRow(
+                    "Control by text",
+                    if (!smsCommands) "Off"
+                    else listOfNotNull(
+                        "On",
+                        if (smsFromAnyone) null else "chosen contacts",
+                        if (chatCommands) "RCS" else null,
+                    ).joinToString(" · "),
+                ) { page = Page.Texts }
                 HorizontalDivider()
                 PageRow("Power menu", if (blockPower) "Blocked" else "Off") { page = Page.Power }
                 HorizontalDivider()
@@ -1459,11 +1466,10 @@ fun AppRoot(activity: ComponentActivity) {
                     }
                 }
 
-                Spacer(Modifier.height(28.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(28.dp))
+                }
 
-                SectionLabel("Control by text")
+                // Its own page since 8.7, reached from its own row on home.
+                if (page == Page.Texts) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
@@ -1802,7 +1808,7 @@ fun AppRoot(activity: ComponentActivity) {
                         Spacer(Modifier.height(16.dp))
                         Text("Words it answers to", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Said out loud. Texts use the commands under Find my phone.",
+                            "Said out loud. Texts use the commands under Control by text.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -2347,6 +2353,7 @@ private enum class Page(val title: String) {
     Strap("The strap"),
     Fires("When it fires"),
     Find("Find my phone"),
+    Texts("Control by text"),
     Power("Power menu"),
     Running("Keep it running"),
     Alerts("Alerts"),
