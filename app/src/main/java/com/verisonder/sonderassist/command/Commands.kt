@@ -63,16 +63,16 @@ object Commands {
 
         val rest = text.substring(word.length).trim()
         val w = Settings.commandWords(context)
-        // "locate live" means live, too.
-        val command = rest.lowercase().split(Regex("\\s+")).let { parts ->
-            if (parts.getOrNull(0) == w.locate && parts.getOrNull(1) == w.live) w.live else parts.getOrNull(0).orEmpty()
-        }
+        val parts = rest.lowercase().split(Regex("\\s+"))
+        val command = parts.getOrNull(0).orEmpty()
+        // Live is "locate live": the locate command with the live word after it.
+        val live = command == w.locate && parts.getOrNull(1) == w.live
         // "10sec" or "10 sec": the number, then the countdown word.
         val seconds = Regex("""^(\d+)\s*${Regex.escape(w.countdown)}""")
             .find(rest.lowercase())?.groupValues?.get(1)?.toIntOrNull()
             ?.takeIf { it > 0 }?.coerceAtMost(3_600)
         val list = listOfNotNull(
-            w.locate, w.live, w.stop, w.lock, w.find, "10${w.countdown}", w.play.ifEmpty { null }, "help",
+            w.locate, "${w.locate} ${w.live}", w.stop, w.lock, w.find, "10${w.countdown}", w.play.ifEmpty { null }, "help",
         )
             .joinToString(" | ")
 
@@ -92,12 +92,7 @@ object Commands {
                     "SonderAssist: F.R.I.D.A.Y already played for this alert."
                 }
             command == "" || command == "help" -> "SonderAssist commands: $word $list"
-            command == w.locate -> {
-                deferred = true
-                later = { send -> Reporter.locateFresh(context, send) }
-                ""
-            }
-            command == w.live -> {
+            live -> {
                 val to = reply
                 if (to == null) {
                     "SonderAssist: live cannot answer this chat - send it as SMS."
@@ -105,9 +100,14 @@ object Commands {
                     // A few seconds first, so the first update carries a fresh fix. Every
                     // update goes back the way this came: SMS, or the same RCS chat.
                     Reporter.start(context, delaySeconds = 5, alsoTo = { text -> to(text) })
-                    "SonderAssist: live location on - ${Settings.reportCount(context)} texts, " +
-                        "every ${Settings.reportIntervalSeconds(context)}s. Text \"$word ${w.stop}\" to end it."
+                    "SonderAssist: live location on - ${Settings.reportCount(context)} updates, " +
+                        "one every ${Settings.reportIntervalSeconds(context)}s. Text \"$word ${w.stop}\" to end it."
                 }
+            }
+            command == w.locate -> {
+                deferred = true
+                later = { send -> Reporter.locateFresh(context, send) }
+                ""
             }
             command == w.stop -> {
                 Reporter.stop(context)
