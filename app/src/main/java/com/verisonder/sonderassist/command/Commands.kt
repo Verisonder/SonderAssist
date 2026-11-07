@@ -7,6 +7,7 @@ import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.media.Friday
 import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.security.DeviceAdminLocker
+import com.verisonder.sonderassist.sensor.WatchService
 
 /**
  * One place that reads a command and does it, whichever way it arrived: a plain SMS
@@ -87,12 +88,13 @@ object Commands {
                 Alarm.ringNow(context)
                 "SonderAssist: ringing now for 30s."
             }
-            command == w.lock ->
-                if (DeviceAdminLocker.lockNow(context)) {
-                    "SonderAssist: locked."
-                } else {
-                    "SonderAssist: could not lock - device admin is off or no screen lock is set."
-                }
+            // Theft mode, as if it had been grabbed, with the F.R.I.D.A.Y clip. If the
+            // service cannot be reached, a plain lock is still better than nothing.
+            command == w.lock -> when {
+                WatchService.theftByText(context) -> "SonderAssist: locked, theft mode on."
+                DeviceAdminLocker.lockNow(context) -> "SonderAssist: locked (theft mode could not start)."
+                else -> "SonderAssist: could not lock - device admin is off or no screen lock is set."
+            }
             else -> "SonderAssist: unknown command '$command'. Try $list."
         }
 

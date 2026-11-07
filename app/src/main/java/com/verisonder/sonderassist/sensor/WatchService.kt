@@ -169,6 +169,8 @@ class WatchService : Service(), SensorEventListener {
                     if (Settings.alertLive(this@WatchService)) showAlert(notify = false)
                 }
 
+                ACTION_REMOTE_THEFT -> remoteTheft()
+
                 // The gesture cleared the alert deliberately. Unlike the guard, which only
                 // hides it, this one means it should not come back.
                 ACTION_DISMISS -> {
@@ -255,6 +257,7 @@ class WatchService : Service(), SensorEventListener {
                 addAction(ACTION_RETUNE)
                 addAction(ACTION_DISMISS)
                 addAction(ACTION_REASSERT)
+                addAction(ACTION_REMOTE_THEFT)
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
@@ -286,7 +289,17 @@ class WatchService : Service(), SensorEventListener {
         startListening()
         repostNotification()
         runCatching { Reporter.remind(this) }
+        if (intent?.action == ACTION_REMOTE_THEFT) remoteTheft()
         return START_STICKY
+    }
+
+    /**
+     * Theft mode on demand, from the lock text command: exactly what a grab does - lock,
+     * location, power menu, the alert screen, listening - and the F.R.I.D.A.Y clip at once.
+     */
+    private fun remoteTheft() {
+        fire("locked by a text command", quiet = false)
+        runCatching { Friday.command(this, Friday.Command.Play) }
     }
 
     /** Whether the running foreground service carries the microphone type. */
@@ -914,6 +927,24 @@ class WatchService : Service(), SensorEventListener {
         }
 
         private const val ACTION_DISMISS = "com.verisonder.sonderassist.DISMISS"
+
+        private const val ACTION_REMOTE_THEFT = "com.verisonder.sonderassist.REMOTE_THEFT"
+
+        /**
+         * Start theft mode from a text command. Through the running service when there is
+         * one; otherwise the service is started for it. False if neither was possible.
+         */
+        fun theftByText(context: Context): Boolean {
+            if (isRunning) {
+                context.sendBroadcast(Intent(ACTION_REMOTE_THEFT).setPackage(context.packageName))
+                return true
+            }
+            return runCatching {
+                context.startForegroundService(
+                    Intent(context, WatchService::class.java).setAction(ACTION_REMOTE_THEFT)
+                )
+            }.isSuccess
+        }
 
         /** The alert was cleared on purpose, so stop putting it back. */
         fun dismiss(context: Context) {
