@@ -38,6 +38,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
+    <!-- F.R.I.D.A.Y mode listens for "Friday" for a minute after a theft. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!--
@@ -83,6 +86,13 @@
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
     <!-- Not required: the detector can fall back to jerk alone, worse but working. -->
     <uses-feature android:name="android.hardware.sensor.gyroscope" android:required="false" />
+
+    <!-- Without this the speech recognizer is invisible to the app from Android 11. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 
     <application
         android:name=".SonderAssistApp"
@@ -151,7 +161,7 @@
         <service
             android:name=".sensor.WatchService"
             android:exported="false"
-            android:foregroundServiceType="specialUse|location">
+            android:foregroundServiceType="specialUse|location|microphone">
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Detects the phone being taken from the user's hand and locks the screen." />

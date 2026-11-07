@@ -143,7 +143,7 @@ class AlertActivity : ComponentActivity() {
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
 
-        if (Settings.jarvis(this)) {
+        if (Settings.friday(this)) {
             showJarvis(savedInstanceState == null)
             return
         }

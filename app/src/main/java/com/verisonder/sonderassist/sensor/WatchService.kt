@@ -25,6 +25,7 @@ import com.verisonder.sonderassist.R
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.detect.Sample
 import com.verisonder.sonderassist.media.Alarm
+import com.verisonder.sonderassist.media.Friday
 import com.verisonder.sonderassist.detect.SnatchDetector
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.PowerMenu
@@ -100,6 +101,7 @@ class WatchService : Service(), SensorEventListener {
                     // it is what silences the alarm — whether or not the alert screen
                     // ever managed to open.
                     Alarm.stop()
+                    Friday.stopAll()
                     getSystemService(NotificationManager::class.java)
                         .cancel(ALERT_NOTIFICATION_ID)
                     // The person is back. Whatever was closed comes open again, and
@@ -171,6 +173,7 @@ class WatchService : Service(), SensorEventListener {
                 // hides it, this one means it should not come back.
                 ACTION_DISMISS -> {
                     Alarm.stop()
+                    Friday.stopAll()
                     Settings.setAlertLive(this@WatchService, false)
                 }
 
@@ -255,11 +258,7 @@ class WatchService : Service(), SensorEventListener {
             },
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        startForeground(
-            NOTIFICATION_ID,
-            notification(),
-            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE,
-        )
+        promote()
         startListening()
         isRunning = true
         WatchTileService.refreshFrom(this)
@@ -269,6 +268,7 @@ class WatchService : Service(), SensorEventListener {
         isRunning = false
         WatchTileService.refreshFrom(this)
         Alarm.stop()
+        Friday.stopAll()
         stopListening()
         cancelTether(returned = false)
         runCatching { unregisterReceiver(screenEvents) }
@@ -280,10 +280,45 @@ class WatchService : Service(), SensorEventListener {
     // A start can arrive while the service is already up for the strap alone. onCreate
     // does not run again, so this is the only place that turns the sensors on for it.
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // A start from the app happens while it is on screen - the moment Android allows
+        // the microphone to be added for F.R.I.D.A.Y.
+        if (!micTyped) promote()
         startListening()
         repostNotification()
         runCatching { Reporter.remind(this) }
         return START_STICKY
+    }
+
+    /** Whether the running foreground service carries the microphone type. */
+    private var micTyped = false
+
+    /**
+     * Foreground, with the microphone type added when it is allowed, so F.R.I.D.A.Y can
+     * listen with the screen off. Android refuses the microphone type when the service is
+     * started from the background (after a reboot, for instance); then it runs without it
+     * until the app is next opened, and the Friday trail says the microphone was blocked.
+     */
+    private fun promote() {
+        val special = android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE
+        val mic = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.RECORD_AUDIO,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (mic) {
+            val ok = runCatching {
+                startForeground(
+                    NOTIFICATION_ID,
+                    notification(),
+                    special or android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE,
+                )
+            }.isSuccess
+            if (ok) {
+                micTyped = true
+                return
+            }
+        }
+        startForeground(NOTIFICATION_ID, notification(), special)
     }
 
     // ------------------------------------------------------------------- listening
@@ -568,6 +603,11 @@ class WatchService : Service(), SensorEventListener {
         // theft — where the app is not in the foreground — the screen is exactly what
         // Android refuses to open.
         Alarm.scheduleAfterGrace(this)
+        // F.R.I.D.A.Y mode: no sound now; listen for the owner asking for it.
+        if (Settings.friday(this)) {
+            Settings.noteAlert(this, "silent - listening for \"Friday\"")
+            runCatching { Friday.listen(this) }
+        }
 
         showAlert()
     }

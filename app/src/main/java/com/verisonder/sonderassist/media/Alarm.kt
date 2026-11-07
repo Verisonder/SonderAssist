@@ -36,6 +36,8 @@ object Alarm {
 
     @Synchronized
     fun scheduleAfterGrace(context: Context) {
+        // F.R.I.D.A.Y mode is silent until the owner asks; Friday owns that sound.
+        if (Settings.friday(context)) return
         if (!Settings.alarmEnabled(context)) return
         val app = context.applicationContext
         appContext = app
@@ -107,6 +109,74 @@ object Alarm {
         handler.postDelayed(task, seconds * 1000L)
     }
 
+    /**
+     * The F.R.I.D.A.Y clip, once, at full alarm volume, then [done] on the main thread.
+     * Volume is put back when it ends.
+     */
+    @Synchronized
+    fun playFriday(context: Context, done: () -> Unit = {}) {
+        val app = context.applicationContext
+        val uri = Uri.parse("android.resource://${app.packageName}/${R.raw.friday_alert}")
+        play(app, uri, loop = false) { done() }
+    }
+
+    /**
+     * The siren at the end of a F.R.I.D.A.Y countdown: the chosen sound or the phone's
+     * alarm, looped at full volume until the phone is unlocked (five minutes at most).
+     */
+    @Synchronized
+    fun siren(context: Context) {
+        val app = context.applicationContext
+        val uri = Settings.alarmUri(app) ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        play(app, uri, loop = true) {}
+        // Unlocking is what stops it; this is the backstop for a phone nobody gets back
+        // to, so it does not scream until the battery dies.
+        val task = Runnable { stop() }
+        pending = task
+        handler.postDelayed(task, SIREN_MAX_MS)
+    }
+
+    private const val SIREN_MAX_MS = 5 * 60_000L
+
+    private fun play(app: Context, uri: Uri, loop: Boolean, done: () -> Unit) {
+        appContext = app
+        cancelPending()
+        player?.runCatching { stop(); release() }
+        player = null
+        val audio = app.getSystemService(AudioManager::class.java)
+        if (previousVolume == null) previousVolume = audio.getStreamVolume(AudioManager.STREAM_ALARM)
+        runCatching {
+            audio.setStreamVolume(
+                AudioManager.STREAM_ALARM,
+                audio.getStreamMaxVolume(AudioManager.STREAM_ALARM),
+                0,
+            )
+        }
+        player = runCatching {
+            MediaPlayer().apply {
+                setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ALARM)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                        .build()
+                )
+                setDataSource(app, uri)
+                isLooping = loop
+                if (!loop) {
+                    setOnCompletionListener {
+                        this@Alarm.stop()
+                        done()
+                    }
+                }
+                prepare()
+                start()
+            }
+        }.onFailure {
+            CrashLog.record(app, "Could not play $uri", it)
+            handler.post { done() }
+        }.getOrNull()
+    }
+
     @Synchronized
     fun stop() {
         cancelPending()
@@ -130,17 +200,9 @@ object Alarm {
             )
         }
 
-        val jarvis = Settings.jarvis(context)
-        // The mode owns the sound completely. Honouring the picked sound or the repeat
-        // count here would leave the settings screen describing something the phone does
-        // not do.
-        val uri = if (jarvis) {
-            Uri.parse("android.resource://${context.packageName}/${R.raw.jarvis_neutralize}")
-        } else {
-            Settings.alarmUri(context)
-                ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
-        }
-        val repeats = if (jarvis) 1 else Settings.alarmRepeats(context)
+        val uri = Settings.alarmUri(context)
+            ?: RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM)
+        val repeats = Settings.alarmRepeats(context)
         var played = 0
 
         player = runCatching {

@@ -67,6 +67,7 @@ import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 import com.verisonder.sonderassist.security.Keepalive
 import com.verisonder.sonderassist.security.PowerMenu
+import com.verisonder.sonderassist.media.Alarm
 import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.sensor.WatchService
 import com.verisonder.sonderassist.learn.AlertLog
@@ -119,7 +120,7 @@ fun AppRoot(activity: ComponentActivity) {
     var granted by remember { mutableStateOf(DeviceAdminLocker.isReady(activity)) }
     // Refreshed on resume, so returning from a failed tile tap shows the reason.
     var crash by remember { mutableStateOf(CrashLog.read(activity)) }
-    var jarvis by remember { mutableStateOf(Settings.jarvis(activity)) }
+    var friday by remember { mutableStateOf(Settings.friday(activity)) }
     var blockPower by remember { mutableStateOf(Settings.blockPowerMenu(activity)) }
     var alertNote by remember { mutableStateOf(Settings.alertNote(activity)) }
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
@@ -176,6 +177,53 @@ fun AppRoot(activity: ComponentActivity) {
     val askReceiveSms = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
+    var smsFromAnyone by remember { mutableStateOf(Settings.smsFromAnyone(activity)) }
+    var smsContacts by remember { mutableStateOf(Settings.smsContacts(activity)) }
+    // The phone-number picker grants read access to the one row picked, so no contacts
+    // permission is needed.
+    val pickContact = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val uri = result.data?.data ?: return@rememberLauncherForActivityResult
+        runCatching {
+            activity.contentResolver.query(
+                uri,
+                arrayOf(
+                    android.provider.ContactsContract.CommonDataKinds.Phone.NUMBER,
+                    android.provider.ContactsContract.CommonDataKinds.Phone.DISPLAY_NAME,
+                ),
+                null, null, null,
+            )?.use { c ->
+                if (c.moveToFirst()) {
+                    val number = c.getString(0).orEmpty()
+                    val name = c.getString(1).orEmpty()
+                    if (number.isNotBlank()) {
+                        Settings.setSmsContacts(
+                            activity,
+                            smsContacts + Settings.Contact(name, number),
+                        )
+                        smsContacts = Settings.smsContacts(activity)
+                    }
+                }
+            }
+        }
+    }
+    var fridayNote by remember { mutableStateOf(Settings.fridayNote(activity)) }
+    var hasMic by remember {
+        mutableStateOf(
+            androidx.core.content.ContextCompat.checkSelfPermission(
+                activity,
+                android.Manifest.permission.RECORD_AUDIO,
+            ) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        )
+    }
+    val askMic = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasMic = granted
+        // So the running service picks up the microphone type now, while the app is open.
+        if (granted) runCatching { WatchService.sync(activity) }
+    }
     var shizuku by remember { mutableStateOf(PowerMenu.available()) }
     var shizukuAsk by remember { mutableStateOf(PowerMenu.needsPermission()) }
     var suppressed by remember { mutableStateOf(Settings.powerMenuSuppressed(activity)) }
@@ -262,6 +310,11 @@ fun AppRoot(activity: ComponentActivity) {
                 reportRunning = Settings.reportRunning(activity)
                 pinLive = Settings.livePin(activity) != null
                 commandNote = Settings.commandNote(activity)
+                fridayNote = Settings.fridayNote(activity)
+                hasMic = androidx.core.content.ContextCompat.checkSelfPermission(
+                    activity,
+                    android.Manifest.permission.RECORD_AUDIO,
+                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
                 fullScreen = canUseFullScreen(activity)
                 // Re-read on every return, because the two things that change it both
                 // happen outside this app: granting the permission, and pairing the watch
@@ -418,8 +471,9 @@ fun AppRoot(activity: ComponentActivity) {
                 HorizontalDivider()
                 PageRow(
                     "When it fires",
-                    (if (alarmOn) "Alarm after $grace s" else "Lock only") +
-                        (if (jarvis) " · J.A.R.V.I.S" else ""),
+                    if (friday) {
+                        "F.R.I.D.A.Y" + if (hasMic) "" else " · mic off"
+                    } else if (alarmOn) "Alarm after $grace s" else "Lock only",
                 ) { page = Page.Fires }
                 HorizontalDivider()
                 PageRow(
@@ -1257,9 +1311,66 @@ fun AppRoot(activity: ComponentActivity) {
 
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "Commands: locate, ring, lock, help.",
+                            "Commands: locate, ring, lock, friday, friday 30, help.",
                             style = MaterialTheme.typography.bodyLarge,
                         )
+
+                        Spacer(Modifier.height(16.dp))
+                        Text("Answer texts from", style = MaterialTheme.typography.bodyLarge)
+                        Spacer(Modifier.height(8.dp))
+                        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                            listOf(true to "Anyone", false to "Chosen contacts")
+                                .forEachIndexed { i, (anyone, label) ->
+                                    SegmentedButton(
+                                        selected = smsFromAnyone == anyone,
+                                        onClick = {
+                                            smsFromAnyone = anyone
+                                            Settings.setSmsFromAnyone(activity, anyone)
+                                        },
+                                        shape = SegmentedButtonDefaults.itemShape(i, 2),
+                                    ) { Text(label) }
+                                }
+                        }
+                        AnimatedVisibility(visible = !smsFromAnyone) {
+                            Column {
+                                Spacer(Modifier.height(8.dp))
+                                if (smsContacts.isEmpty()) {
+                                    Text(
+                                        "No one yet - every text will be ignored.",
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                smsContacts.forEach { contact ->
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        verticalAlignment = Alignment.CenterVertically,
+                                    ) {
+                                        Text(
+                                            contact.name.ifBlank { contact.number } +
+                                                if (contact.name.isBlank()) "" else " · ${contact.number}",
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        TextButton(onClick = {
+                                            Settings.setSmsContacts(
+                                                activity,
+                                                smsContacts - contact,
+                                            )
+                                            smsContacts = Settings.smsContacts(activity)
+                                        }) { Text("Remove") }
+                                    }
+                                }
+                                FilledTonalButton(onClick = {
+                                    pickContact.launch(
+                                        Intent(
+                                            Intent.ACTION_PICK,
+                                            android.provider.ContactsContract.CommonDataKinds.Phone.CONTENT_URI,
+                                        )
+                                    )
+                                }) { Text("Add a contact") }
+                            }
+                        }
 
                         Spacer(Modifier.height(12.dp))
                         FilledTonalButton(onClick = { openPermissions(activity) }) {
@@ -1348,46 +1459,63 @@ fun AppRoot(activity: ComponentActivity) {
                 HorizontalDivider()
                 Spacer(Modifier.height(28.dp))
 
-                SectionLabel("J.A.R.V.I.S mode")
+                SectionLabel("F.R.I.D.A.Y mode")
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
+                        Text("F.R.I.D.A.Y mode", style = MaterialTheme.typography.bodyLarge)
                         Text(
-                            "Replace the alert screen",
-                            style = MaterialTheme.typography.bodyLarge,
-                        )
-                        Text(
-                            "Your message on a dark screen, with its own sound.\nTwo-finger tap, two fingers up, one finger across clears it.",
+                            "Silent until you say or text \"Friday\".",
                             style = MaterialTheme.typography.bodyMedium,
                         )
                     }
                     Switch(
-                        checked = jarvis,
+                        checked = friday,
                         onCheckedChange = {
-                            jarvis = it
-                            Settings.setJarvis(activity, it)
-                            // The mode promises a sound, and the sound is gated on the
-                            // switch below. Turning the mode on without this left it
-                            // describing something that could not happen.
-                            if (it && !alarmOn) {
-                                alarmOn = true
-                                Settings.setAlarmEnabled(activity, true)
+                            friday = it
+                            Settings.setFriday(activity, it)
+                            if (it && !hasMic) {
+                                askMic.launch(android.Manifest.permission.RECORD_AUDIO)
                             }
                         },
                     )
                 }
-                AnimatedVisibility(visible = jarvis) {
+                AnimatedVisibility(visible = friday) {
                     Column {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            // Said plainly rather than left to be discovered: the gesture
-                            // is not a PIN and the phone cannot check who made it.
-                            "Anyone who knows the gesture can clear it. Unlocking still works.",
+                            "\"Friday\" plays the clip. \"Friday 30\" sets off the siren in 30 s.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+                        Text(
+                            "Listens for 60 s after a theft. Unlocking stops everything.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            "Two-finger tap, two up, one across clears the screen.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        if (!hasMic) {
+                            Spacer(Modifier.height(8.dp))
+                            FilledTonalButton(onClick = {
+                                askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+                            }) { Text("Allow the microphone") }
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        TextButton(onClick = { Alarm.playFriday(activity) }) {
+                            Text("Play the clip")
+                        }
+                        fridayNote?.let { note ->
+                            Spacer(Modifier.height(8.dp))
+                            Text("What it heard", style = MaterialTheme.typography.bodyLarge)
+                            Spacer(Modifier.height(4.dp))
+                            Text(note, style = MaterialTheme.typography.bodySmall)
+                        }
                     }
                 }
 
@@ -1395,8 +1523,26 @@ fun AppRoot(activity: ComponentActivity) {
                 HorizontalDivider()
                 Spacer(Modifier.height(28.dp))
 
-                SectionLabel("Sound")
-                Row(
+                SectionLabel(if (friday) "Siren" else "Sound")
+                if (friday) {
+                    Text(
+                        alarmName?.let { "Siren: $it" } ?: "Siren: this phone's alarm",
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onClick = { pickAudio.launch(arrayOf("audio/*")) }) {
+                            Text("Choose a sound")
+                        }
+                        if (alarmName != null) {
+                            TextButton(onClick = {
+                                Settings.setAlarmUri(activity, null)
+                                alarmName = null
+                            }) { Text("Use default") }
+                        }
+                    }
+                }
+                if (!friday) Row(
                     modifier = Modifier.fillMaxWidth(),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -1416,18 +1562,7 @@ fun AppRoot(activity: ComponentActivity) {
                     )
                 }
 
-                AnimatedVisibility(visible = alarmOn && jarvis) {
-                    Column {
-                        Spacer(Modifier.height(16.dp))
-                        Text(
-                            "J.A.R.V.I.S mode uses its own sound. Turn it off to choose one.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-
-                AnimatedVisibility(visible = alarmOn && !jarvis) {
+                AnimatedVisibility(visible = alarmOn && !friday) {
                     Column {
                         Spacer(Modifier.height(16.dp))
                         Text(
@@ -1467,9 +1602,8 @@ fun AppRoot(activity: ComponentActivity) {
                     }
                 }
 
-                // Outside the mode check on purpose. J.A.R.V.I.S mode keeps the grace
-                // period, so hiding the control would leave it applying and unreachable.
-                AnimatedVisibility(visible = alarmOn) {
+                // F.R.I.D.A.Y mode has no timed sound, so no wait to set.
+                AnimatedVisibility(visible = alarmOn && !friday) {
                     Column {
                         Spacer(Modifier.height(20.dp))
                         Text("Wait $grace seconds before the sound", style = MaterialTheme.typography.bodyLarge)

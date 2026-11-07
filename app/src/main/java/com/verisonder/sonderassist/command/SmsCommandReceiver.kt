@@ -10,6 +10,7 @@ import androidx.core.content.ContextCompat
 import com.verisonder.sonderassist.CrashLog
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.media.Alarm
+import com.verisonder.sonderassist.media.Friday
 import com.verisonder.sonderassist.report.Reporter
 import com.verisonder.sonderassist.security.DeviceAdminLocker
 
@@ -52,11 +53,17 @@ class SmsCommandReceiver : BroadcastReceiver() {
         // Case-insensitive on the word and the command, so a keyboard that capitalises the
         // first letter of a message does not silently break it.
         if (!body.lowercase().startsWith(word.lowercase())) return
+        // The word matched, so this is meant for the phone: worth a line even when refused,
+        // or "texted from a number not on the list" looks the same as "never arrived".
+        if (!Settings.smsAllowed(context, sender)) {
+            Settings.noteCommand(context, "ignored $sender - not a chosen contact")
+            return
+        }
         val rest = body.substring(word.length).trim()
         val command = rest.substringBefore(' ').lowercase()
 
         val reply = when (command) {
-            "", "help" -> "SonderAssist commands: $word locate | ring | lock | help"
+            "", "help" -> "SonderAssist commands: $word locate | ring | lock | friday | friday 30 | help"
             "locate" -> Reporter.locateText(context)
             "ring" -> {
                 Alarm.ringNow(context)
@@ -68,7 +75,17 @@ class SmsCommandReceiver : BroadcastReceiver() {
                 } else {
                     "SonderAssist: could not lock - device admin is off or no screen lock is set."
                 }
-            else -> "SonderAssist: unknown command '$command'. Try locate, ring, lock or help."
+            "friday" -> when (val f = Friday.parse(rest) ?: Friday.Command.Play) {
+                Friday.Command.Play -> {
+                    Friday.command(context, f)
+                    "SonderAssist: playing F.R.I.D.A.Y."
+                }
+                is Friday.Command.Countdown -> {
+                    Friday.command(context, f)
+                    "SonderAssist: siren in ${f.seconds}s. Unlock to stop it."
+                }
+            }
+            else -> "SonderAssist: unknown command '$command'. Try locate, ring, lock, friday or help."
         }
 
         // Arrival is logged before the reply is attempted, so "got the command but could not

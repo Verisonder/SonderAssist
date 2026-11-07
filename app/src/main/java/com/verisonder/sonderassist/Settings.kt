@@ -62,6 +62,9 @@ object Settings {
     private const val SMS_COMMANDS = "sms_commands"
     private const val SECRET_WORD = "secret_word"
     private const val COMMAND_NOTE = "command_note"
+    private const val SMS_FROM_ANYONE = "sms_from_anyone"
+    private const val SMS_CONTACTS = "sms_contacts"
+    private const val FRIDAY_NOTE = "friday_note"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -154,19 +157,18 @@ object Settings {
     }
 
     /**
-     * J.A.R.V.I.S mode.
+     * F.R.I.D.A.Y mode, which replaced J.A.R.V.I.S mode under the same key.
      *
-     * It takes over the sound outright rather than sitting alongside it: the bundled clip
-     * instead of the chosen one, played once instead of counted. Leaving the sound picker
-     * live while the mode overrides it would show one thing and do another.
+     * The dark alert screen, and no sound at all until the owner asks: "Friday" said near
+     * the phone (it listens for a minute after a theft) or texted, plays the clip; "Friday
+     * 30" starts a countdown to the siren. See [com.verisonder.sonderassist.media.Friday].
      *
-     * The grace period is deliberately left alone. It is the reason the detector is
-     * allowed to fire on thin evidence, and a mode that skipped it would quietly change
-     * the trade the thresholds were chosen under.
+     * On by default - the owner's choice, the one exception to everything optional being
+     * off. A phone where it was switched off by hand keeps it off.
      */
-    fun jarvis(context: Context): Boolean = of(context).getBoolean(JARVIS, false)
+    fun friday(context: Context): Boolean = of(context).getBoolean(JARVIS, true)
 
-    fun setJarvis(context: Context, value: Boolean) {
+    fun setFriday(context: Context, value: Boolean) {
         of(context).edit().putBoolean(JARVIS, value).apply()
     }
 
@@ -699,6 +701,63 @@ object Settings {
         // may not survive long enough to flush an apply().
         of(context).edit()
             .putString(COMMAND_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
+            .commit()
+    }
+
+    /**
+     * Who text commands are taken from: anyone who knows the word, or only chosen contacts.
+     * Anyone by default, which is how it shipped.
+     */
+    fun smsFromAnyone(context: Context): Boolean = of(context).getBoolean(SMS_FROM_ANYONE, true)
+
+    fun setSmsFromAnyone(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(SMS_FROM_ANYONE, value).apply()
+    }
+
+    data class Contact(val name: String, val number: String)
+
+    /** One per line, "number|name". Numbers as the contact holds them. */
+    fun smsContacts(context: Context): List<Contact> =
+        of(context).getString(SMS_CONTACTS, "").orEmpty().lines()
+            .filter { it.isNotBlank() }
+            .map { Contact(it.substringAfter('|', ""), it.substringBefore('|')) }
+
+    fun setSmsContacts(context: Context, contacts: List<Contact>) {
+        of(context).edit()
+            .putString(
+                SMS_CONTACTS,
+                contacts.distinctBy { numberKey(it.number) }
+                    .joinToString("\n") { "${it.number}|${it.name.replace("\n", " ")}" },
+            )
+            .apply()
+    }
+
+    /**
+     * The last nine digits. "+212 6 12 34 56 78", "0612345678" and "00212612345678" are the
+     * same phone, and the sender address arrives in whichever form the network chose.
+     */
+    fun numberKey(number: String): String = number.filter { it.isDigit() }.takeLast(9)
+
+    fun smsAllowed(context: Context, sender: String): Boolean {
+        if (smsFromAnyone(context)) return true
+        val key = numberKey(sender)
+        if (key.isEmpty()) return false
+        return smsContacts(context).any { numberKey(it.number) == key }
+    }
+
+    /** What F.R.I.D.A.Y heard and did, last six lines. */
+    fun fridayNote(context: Context): String? = of(context).getString(FRIDAY_NOTE, null)
+
+    fun noteFriday(context: Context, what: String, fresh: Boolean = false) {
+        val at = java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date())
+        val kept = if (fresh) {
+            emptyList()
+        } else {
+            fridayNote(context).orEmpty().lines().filter { it.isNotBlank() }
+        }
+        of(context).edit()
+            .putString(FRIDAY_NOTE, (kept + "$at $what").takeLast(6).joinToString("\n"))
             .commit()
     }
 }
