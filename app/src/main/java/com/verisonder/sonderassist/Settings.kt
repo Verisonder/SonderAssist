@@ -68,6 +68,7 @@ object Settings {
     private const val FRIDAY_NOTE = "friday_note"
     private const val FRIDAY_WORDS = "friday_words"
     private const val CHAT_COMMANDS = "chat_commands"
+    private const val COUNTDOWN_LABEL = "countdown_label"
 
     /** 0 is the most cautious, 1 the most eager. Middle is the shipped default. */
     const val DEFAULT_SENSITIVITY = 0.5f
@@ -785,6 +786,14 @@ object Settings {
      * messages reach the app at all. Needs notification access. Off by default.
      */
     fun chatCommands(context: Context): Boolean = of(context).getBoolean(CHAT_COMMANDS, false)
+
+    /** The words above the countdown number. Blank shows nothing. */
+    fun countdownLabel(context: Context): String =
+        of(context).getString(COUNTDOWN_LABEL, "SIREN IN") ?: "SIREN IN"
+
+    fun setCountdownLabel(context: Context, value: String) {
+        of(context).edit().putString(COUNTDOWN_LABEL, value.trim().replace("\n", " ")).apply()
+    }
 
     fun setChatCommands(context: Context, value: Boolean) {
         of(context).edit().putBoolean(CHAT_COMMANDS, value).apply()

@@ -34,6 +34,7 @@ class CountdownView(context: Context) : View(context) {
     private val arc = RectF()
     private var shown = 0f
     private val born = SystemClock.elapsedRealtime()
+    private val label = com.verisonder.sonderassist.Settings.countdownLabel(context)
 
     private fun dp(v: Float) = v * resources.displayMetrics.density
 
@@ -118,11 +119,11 @@ class CountdownView(context: Context) : View(context) {
         text.textSize = r * (if (siren) 0.30f else 0.48f)
         val big = if (siren) "SIREN" else ceil(leftMs / 1000.0).toInt().toString()
         canvas.drawText(big, cx, cy + text.textSize * 0.35f, text)
-        if (!siren) {
+        if (!siren && label.isNotEmpty()) {
             text.color = a(150)
             text.textSize = r * 0.09f
             text.letterSpacing = 0.3f
-            canvas.drawText("SIREN IN", cx, cy - r * 0.30f, text)
+            canvas.drawText(label, cx, cy - r * 0.30f, text)
             text.letterSpacing = 0f
         }
     }

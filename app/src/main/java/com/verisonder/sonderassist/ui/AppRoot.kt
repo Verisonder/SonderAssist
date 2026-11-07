@@ -225,6 +225,7 @@ fun AppRoot(activity: ComponentActivity) {
     var fridayNote by remember { mutableStateOf(Settings.fridayNote(activity)) }
     var fridayWords by remember { mutableStateOf(Settings.fridayWords(activity)) }
     var newWord by remember { mutableStateOf("") }
+    var countdownLabel by remember { mutableStateOf(Settings.countdownLabel(activity)) }
     var chatCommands by remember { mutableStateOf(Settings.chatCommands(activity)) }
     var chatAccess by remember { mutableStateOf(ChatCommandListener.hasAccess(activity)) }
     var hasMic by remember {
@@ -1741,6 +1742,26 @@ fun AppRoot(activity: ComponentActivity) {
                                 askMic.launch(android.Manifest.permission.RECORD_AUDIO)
                             }) { Text("Allow the microphone") }
                         }
+
+                        Spacer(Modifier.height(16.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = countdownLabel,
+                                onValueChange = { countdownLabel = it.take(20) },
+                                label = { Text("Text above the countdown") },
+                                singleLine = true,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = {
+                                Settings.setCountdownLabel(activity, countdownLabel)
+                                countdownLabel = Settings.countdownLabel(activity)
+                            }) { Text("Save") }
+                        }
+                        Text(
+                            "Leave it empty to show only the number.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
 
                         Spacer(Modifier.height(16.dp))
                         Text("Words it answers to", style = MaterialTheme.typography.bodyLarge)
