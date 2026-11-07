@@ -36,6 +36,9 @@ object Settings {
     private const val STATUS_EVERY = "status_every"
     private const val REPORT_NOTE = "report_note"
     private const val REPORT_RUNNING = "report_running"
+    private const val LIVE_PIN_ID = "live_pin_id"
+    private const val LIVE_PIN_CHAT = "live_pin_chat"
+    private const val LIVE_PIN_UNTIL = "live_pin_until"
     private const val ALERT_LIVE = "alert_live"
     private const val ALERT_QUIET = "alert_quiet"
     private const val TETHER = "tether"
@@ -506,6 +509,48 @@ object Settings {
     fun setReportRunning(context: Context, value: Boolean) {
         of(context).edit().putBoolean(REPORT_RUNNING, value).commit()
     }
+
+    /**
+     * The Telegram live pin that is still moving, if any.
+     *
+     * On disk, not in memory: Xiaomi kills the process, and a pin whose id lived only in
+     * memory stayed live in the group for up to a day with nothing able to stop it. Kept
+     * until Telegram confirms the stop, so a failed stop leaves the button on screen.
+     */
+    data class LivePin(val messageId: Long, val chat: String)
+
+    fun livePin(context: Context): LivePin? {
+        val prefs = of(context)
+        val id = prefs.getLong(LIVE_PIN_ID, 0L)
+        val chat = prefs.getString(LIVE_PIN_CHAT, null)
+        if (id == 0L || chat.isNullOrBlank()) return null
+        // Telegram ends the pin itself once its period runs out.
+        if (System.currentTimeMillis() > prefs.getLong(LIVE_PIN_UNTIL, 0L)) {
+            clearLivePin(context)
+            return null
+        }
+        return LivePin(id, chat)
+    }
+
+    fun setLivePin(context: Context, messageId: Long, chat: String, periodSeconds: Int) {
+        of(context).edit()
+            .putLong(LIVE_PIN_ID, messageId)
+            .putString(LIVE_PIN_CHAT, chat)
+            .putLong(LIVE_PIN_UNTIL, System.currentTimeMillis() + periodSeconds * 1000L)
+            .commit()
+    }
+
+    fun clearLivePin(context: Context) {
+        of(context).edit()
+            .remove(LIVE_PIN_ID)
+            .remove(LIVE_PIN_CHAT)
+            .remove(LIVE_PIN_UNTIL)
+            .commit()
+    }
+
+    /** Anything still going out: the report running, or a pin still live in Telegram. */
+    fun sendingLocation(context: Context): Boolean =
+        reportRunning(context) || livePin(context) != null
 
     /**
      * Whether an alert is still standing.

@@ -19,6 +19,7 @@ import com.verisonder.sonderassist.CrashLog
 import androidx.core.app.NotificationCompat
 import com.verisonder.sonderassist.Settings
 import com.verisonder.sonderassist.sensor.WatchService
+import com.verisonder.sonderassist.ui.MainActivity
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -56,9 +57,6 @@ object Reporter {
     private var pending: Runnable? = null
     private var sent = 0
 
-    /** The live-location message being edited in place, once Telegram has accepted one. */
-    private var liveMessageId: Long? = null
-
     /** When the last written update went out, as opposed to the pin being moved. */
     private var lastStatusAt = 0L
 
@@ -73,7 +71,7 @@ object Reporter {
         val app = context.applicationContext
         cancel()
         sent = 0
-        liveMessageId = null
+        // A pin left live from an earlier run is reused and moved, not left behind.
         lastStatusAt = 0L
         Settings.setReportRunning(app, true)
         // The strap can want a different wait from a grab: one is a guess about a
@@ -91,21 +89,48 @@ object Reporter {
      * for afterwards, when it is back.
      */
     @Synchronized
-    fun stop(context: Context) {
+    fun stop(context: Context, done: ((Boolean) -> Unit)? = null) {
         val app = context.applicationContext
+        val wasRunning = Settings.reportRunning(app)
         cancel()
         Settings.setReportRunning(app, false)
         hide(app)
-        val id = liveMessageId ?: return
-        liveMessageId = null
+        val pin = Settings.livePin(app)
+        if (pin == null) {
+            if (wasRunning) Settings.noteReport(app, "stopped")
+            done?.let { handler.post { it(true) } }
+            return
+        }
+        // Read from disk, so a pin started before the process was killed can still be
+        // stopped. Forgotten only once Telegram says it has stopped.
         network.execute {
-            call(
+            val code = status(
                 Settings.telegramToken(app),
                 "stopMessageLiveLocation",
-                "chat_id=${enc(Settings.telegramChat(app))}&message_id=$id",
+                "chat_id=${enc(pin.chat)}&message_id=${pin.messageId}",
             )
-            Settings.noteReport(app, "stopped")
+            // 400 is Telegram saying the pin is already stopped, expired or deleted.
+            val stopped = code == 200 || code == 400
+            if (stopped) {
+                Settings.clearLivePin(app)
+                Settings.noteReport(app, "stopped, pin taken down")
+            } else {
+                Settings.noteReport(app, "could not stop the pin - no connection?")
+            }
+            done?.let { handler.post { it(stopped) } }
         }
+    }
+
+    /**
+     * Put the notification back if a pin is still live but nothing is running any more -
+     * after the process was killed, or a restart. Otherwise it would be live with nothing
+     * on the phone saying so.
+     */
+    @Synchronized
+    fun remind(context: Context) {
+        val app = context.applicationContext
+        if (pending != null || Settings.livePin(app) == null) return
+        show(app, "The Telegram pin is still live.")
     }
 
     /**
@@ -155,6 +180,15 @@ object Reporter {
                 .setSmallIcon(android.R.drawable.ic_menu_mylocation)
                 .setOngoing(true)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setContentIntent(
+                    PendingIntent.getActivity(
+                        context,
+                        0,
+                        Intent(context, MainActivity::class.java)
+                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+                    )
+                )
                 .addAction(0, "Stop", stop)
                 .build(),
         )
@@ -392,7 +426,7 @@ object Reporter {
         val chat = Settings.telegramChat(context)
         if (token.isBlank() || chat.isBlank()) return
 
-        val id = liveMessageId
+        val id = Settings.livePin(context)?.takeIf { it.chat == chat }?.messageId
         val moved = id != null && call(
             token,
             "editMessageLiveLocation",
@@ -424,9 +458,9 @@ object Reporter {
             return
         }
 
-        liveMessageId = runCatching {
+        runCatching {
             JSONObject(body).getJSONObject("result").getLong("message_id")
-        }.getOrNull()
+        }.getOrNull()?.let { Settings.setLivePin(context, it, chat, period) }
         Settings.noteReport(context, "live pin sent")
     }
 
@@ -443,6 +477,19 @@ object Reporter {
             connection.disconnect()
         }
     }.getOrNull()
+
+    /** The HTTP status alone, or -1 if there was no answer at all. */
+    private fun status(token: String, method: String, query: String): Int = runCatching {
+        val connection = URL("https://api.telegram.org/bot$token/$method?$query")
+            .openConnection() as HttpURLConnection
+        connection.connectTimeout = 15_000
+        connection.readTimeout = 15_000
+        try {
+            connection.responseCode
+        } finally {
+            connection.disconnect()
+        }
+    }.getOrDefault(-1)
 
     private fun enc(value: String) = URLEncoder.encode(value, "UTF-8")
 }

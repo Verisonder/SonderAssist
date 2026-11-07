@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -152,6 +153,20 @@ fun AppRoot(activity: ComponentActivity) {
     var statusEvery by remember { mutableIntStateOf(Settings.statusEveryMinutes(activity)) }
     var reportNote by remember { mutableStateOf(Settings.reportNote(activity)) }
     var reportRunning by remember { mutableStateOf(Settings.reportRunning(activity)) }
+    var pinLive by remember { mutableStateOf(Settings.livePin(activity) != null) }
+    var stopping by remember { mutableStateOf(false) }
+    // One stop, used by the home card and the Find my phone page alike. The result comes
+    // back from the network, so the card only goes away once the pin is really down.
+    val stopSending = {
+        stopping = true
+        reportRunning = false
+        Reporter.stop(activity) { _ ->
+            stopping = false
+            reportRunning = Settings.reportRunning(activity)
+            pinLive = Settings.livePin(activity) != null
+            reportNote = Settings.reportNote(activity)
+        }
+    }
     val askReportPermissions = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { }
@@ -245,6 +260,7 @@ fun AppRoot(activity: ComponentActivity) {
                 learnPending = AlertLog.pending(activity)
                 reportNote = Settings.reportNote(activity)
                 reportRunning = Settings.reportRunning(activity)
+                pinLive = Settings.livePin(activity) != null
                 commandNote = Settings.commandNote(activity)
                 fullScreen = canUseFullScreen(activity)
                 // Re-read on every return, because the two things that change it both
@@ -329,6 +345,17 @@ fun AppRoot(activity: ComponentActivity) {
             Spacer(Modifier.height(28.dp))
         }
 
+        // Said first and in red: the location going out is the one thing on this screen
+        // that must never be missed.
+        if (page == Page.Home && (reportRunning || pinLive)) {
+            SendingCard(
+                live = reportRunning,
+                stopping = stopping,
+                onStop = stopSending,
+            )
+            Spacer(Modifier.height(28.dp))
+        }
+
         when {
             !hasLock -> Blocker(
                 title = "Set a screen lock first",
@@ -398,7 +425,8 @@ fun AppRoot(activity: ComponentActivity) {
                 PageRow(
                     "Find my phone",
                     listOfNotNull(
-                        if (report) "Location on" else null,
+                        if (reportRunning || pinLive) "Sending now"
+                        else if (report) "Location on" else null,
                         if (smsCommands) "Texts on" else null,
                     ).joinToString(" · ").ifEmpty { "Off" },
                 ) { page = Page.Find }
@@ -1148,22 +1176,13 @@ fun AppRoot(activity: ComponentActivity) {
                             Text("Open permissions")
                         }
 
-                        if (reportRunning) {
+                        if (reportRunning || pinLive) {
                             Spacer(Modifier.height(16.dp))
-                            Text("Sending now.", style = MaterialTheme.typography.bodyLarge)
-                            Text(
-                                // Said plainly: on a phone that has been taken this button
-                                // cannot be reached, and unlocking is what stops it.
-                                "Unlocking stops it anyway. This is for when it is back.",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            SendingCard(
+                                live = reportRunning,
+                                stopping = stopping,
+                                onStop = stopSending,
                             )
-                            Spacer(Modifier.height(8.dp))
-                            Button(onClick = {
-                                Reporter.stop(activity)
-                                reportRunning = false
-                                reportNote = Settings.reportNote(activity)
-                            }) { Text("Stop sending") }
                         }
 
                         reportNote?.let { note ->
@@ -1612,6 +1631,35 @@ fun AppRoot(activity: ComponentActivity) {
  * of a dark screen. Status is carried by the words and the button, on the same background
  * as everything else.
  */
+/** The location is going out right now, and the one button that ends it. */
+@Composable
+private fun SendingCard(live: Boolean, stopping: Boolean, onStop: () -> Unit) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text("Your location is being sent", style = MaterialTheme.typography.titleMedium)
+            Spacer(Modifier.height(4.dp))
+            Text(
+                if (live) "Live, until you stop it." else "The Telegram pin is still live.",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(
+                onClick = onStop,
+                enabled = !stopping,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = MaterialTheme.colorScheme.error,
+                    contentColor = MaterialTheme.colorScheme.onError,
+                ),
+            ) { Text(if (stopping) "Stopping…" else "Stop sending") }
+        }
+    }
+}
+
 @Composable
 private fun StatusCard(watching: Boolean, onToggle: () -> Unit) {
     // One tile, tappable anywhere, carrying the state and the way to change it. The whole

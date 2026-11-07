@@ -282,6 +282,7 @@ class WatchService : Service(), SensorEventListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         startListening()
         repostNotification()
+        runCatching { Reporter.remind(this) }
         return START_STICKY
     }
 
