@@ -291,7 +291,7 @@ object Friday {
                 endListening(null)
                 cancelCountdown()
                 Settings.noteFriday(app, "siren in ${command.seconds} s")
-                // One of the two replies, at random.
+                // "OK sir".
                 Alarm.playAck(app)
                 holdAwake(app, command.seconds * 1000L + 10_000)
                 val ms = command.seconds * 1000L
