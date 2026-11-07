@@ -57,8 +57,11 @@ object Reporter {
     private var pending: Runnable? = null
     private var sent = 0
 
-    /** The number that asked for live location by text, sent to alongside the usual one. */
-    private var extraTo: String? = null
+    /**
+     * Whoever asked for live location by text, sent to alongside the usual number: by SMS,
+     * or through the RCS chat's own Reply button, whichever way the request came.
+     */
+    private var extraTo: ((String) -> Unit)? = null
 
     /** Keeps the last-known position fresh for as long as a run lasts. */
     private var follower: android.location.LocationListener? = null
@@ -72,7 +75,7 @@ object Reporter {
      * Called at the lock, not after it: the countdown is the point.
      */
     @Synchronized
-    fun start(context: Context, delaySeconds: Int? = null, alsoTo: String? = null) {
+    fun start(context: Context, delaySeconds: Int? = null, alsoTo: ((String) -> Unit)? = null) {
         // A live request by text runs even when theft reports are switched off: the owner
         // asked for it, from the number it answers.
         if (!Settings.reportEnabled(context) && alsoTo == null) return
@@ -231,7 +234,7 @@ object Reporter {
             val text = textFor(context, location)
             if (sent <= Settings.reportCount(context)) {
                 sendSms(context, text)
-                extraTo?.let { sendSmsTo(context, it, text) }
+                extraTo?.let { send -> runCatching { send(text) } }
             }
             network.execute { sendTelegram(context, location, text) }
 

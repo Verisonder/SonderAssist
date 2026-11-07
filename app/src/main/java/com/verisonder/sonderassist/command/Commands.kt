@@ -62,8 +62,11 @@ object Commands {
         }
 
         val rest = text.substring(word.length).trim()
-        val command = rest.substringBefore(' ').lowercase()
         val w = Settings.commandWords(context)
+        // "locate live" means live, too.
+        val command = rest.lowercase().split(Regex("\\s+")).let { parts ->
+            if (parts.getOrNull(0) == w.locate && parts.getOrNull(1) == w.live) w.live else parts.getOrNull(0).orEmpty()
+        }
         // "10sec" or "10 sec": the number, then the countdown word.
         val seconds = Regex("""^(\d+)\s*${Regex.escape(w.countdown)}""")
             .find(rest.lowercase())?.groupValues?.get(1)?.toIntOrNull()
@@ -95,12 +98,13 @@ object Commands {
                 ""
             }
             command == w.live -> {
-                val to = number
+                val to = reply
                 if (to == null) {
-                    "SonderAssist: live needs a number to text - send it as SMS."
+                    "SonderAssist: live cannot answer this chat - send it as SMS."
                 } else {
-                    // A few seconds first, so the first text carries a fresh fix.
-                    Reporter.start(context, delaySeconds = 5, alsoTo = to)
+                    // A few seconds first, so the first update carries a fresh fix. Every
+                    // update goes back the way this came: SMS, or the same RCS chat.
+                    Reporter.start(context, delaySeconds = 5, alsoTo = { text -> to(text) })
                     "SonderAssist: live location on - ${Settings.reportCount(context)} texts, " +
                         "every ${Settings.reportIntervalSeconds(context)}s. Text \"$word ${w.stop}\" to end it."
                 }
