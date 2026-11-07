@@ -76,7 +76,7 @@ object Commands {
                 "SonderAssist: siren in ${friday.seconds}s. Unlock to stop it."
             }
             command == "" || command == "help" ->
-                "SonderAssist commands: $word locate | ring | lock | $first | $first 30 | help"
+                "SonderAssist commands: $word locate | ring | lock | $first | $first 10 | help"
             command == "locate" -> Reporter.locateText(context)
             command == "ring" -> {
                 Alarm.ringNow(context)

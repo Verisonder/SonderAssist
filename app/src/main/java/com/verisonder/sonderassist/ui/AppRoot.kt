@@ -1516,7 +1516,7 @@ fun AppRoot(activity: ComponentActivity) {
 
                         Spacer(Modifier.height(12.dp))
                         Text(
-                            "Commands: locate, ring, lock, ${fridayWords.first().lowercase()}, ${fridayWords.first().lowercase()} 30, help.",
+                            "Commands: locate, ring, lock, ${fridayWords.first().lowercase()}, ${fridayWords.first().lowercase()} 10, help.",
                             style = MaterialTheme.typography.bodyLarge,
                         )
 
@@ -1721,7 +1721,7 @@ fun AppRoot(activity: ComponentActivity) {
                     Column {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "\"${fridayWords.first()}\" plays the clip. \"${fridayWords.first()} 30\" sets off the siren in 30 s.",
+                            "\"${fridayWords.first()}\" plays the clip. \"${fridayWords.first()} 10\" (or 30, 60) sets off the siren after that many seconds.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
