@@ -132,6 +132,8 @@ fun AppRoot(activity: ComponentActivity) {
     var wideSensitivity by remember { mutableFloatStateOf(Settings.wideSensitivity(activity)) }
     var wideBuzz by remember { mutableStateOf(Settings.wideBuzz(activity)) }
     var wideListen by remember { mutableIntStateOf(Settings.wideListenSeconds(activity)) }
+    var wideMuteSystem by remember { mutableStateOf(Settings.wideMuteSystem(activity)) }
+    var wideLongSilence by remember { mutableStateOf(Settings.wideLongSilence(activity)) }
     var whichDetector by remember { mutableStateOf(Settings.detector(activity)) }
     var learn by remember { mutableStateOf(Settings.learn(activity)) }
     var learnCounts by remember { mutableStateOf(AlertLog.counts(activity)) }
@@ -935,6 +937,40 @@ fun AppRoot(activity: ComponentActivity) {
                             onCheckedChange = {
                                 wideBuzz = it
                                 Settings.setWideBuzz(activity, it)
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Mute system sounds", style = MaterialTheme.typography.bodyLarge)
+                            Text("Hides the beep. Music keeps playing.", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Switch(
+                            checked = wideMuteSystem,
+                            onCheckedChange = {
+                                wideMuteSystem = it
+                                Settings.setWideMuteSystem(activity, it)
+                            },
+                        )
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Fewer restarts", style = MaterialTheme.typography.bodyLarge)
+                            Text("Waits longer before the mic restarts.", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Switch(
+                            checked = wideLongSilence,
+                            onCheckedChange = {
+                                wideLongSilence = it
+                                Settings.setWideLongSilence(activity, it)
                             },
                         )
                     }

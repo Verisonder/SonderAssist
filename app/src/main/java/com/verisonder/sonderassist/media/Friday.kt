@@ -41,6 +41,12 @@ object Friday {
 
     const val WINDOW_MS = 60_000L
 
+    private val ALERT_MUTE = listOf(
+        AudioManager.STREAM_MUSIC,
+        AudioManager.STREAM_NOTIFICATION,
+        AudioManager.STREAM_SYSTEM,
+    )
+
     sealed interface Command {
         data object Play : Command
         data class Countdown(val seconds: Int) : Command
@@ -64,8 +70,15 @@ object Friday {
     private var wide = false
     private var onWide: ((Command) -> Unit)? = null
 
-    /** Muting hides the recognizer's beep. Wide mode opens the mic often, so it leaves music alone. */
-    private var mute = true
+    /**
+     * The streams muted while listening, to hide the recognizer's beep. After an alert: music,
+     * notifications and system. Wide mode opens the mic often and never mutes music; it mutes
+     * notifications and system only if the owner chose that.
+     */
+    private var muteStreams = ALERT_MUTE
+
+    /** Wide mode, owner's choice: ask the recognizer to wait longer before ending a phrase. */
+    private var longSilence = false
 
     /** How long one listen lasts: [WINDOW_MS] after an alert, the owner's choice in wide mode. */
     private var windowMs = WINDOW_MS
@@ -101,12 +114,20 @@ object Friday {
             Settings.noteFriday(app, "cannot listen - no speech recognition on this phone", fresh = true)
             return
         }
-        Settings.noteFriday(app, "listening for 60 s", fresh = true)
-        // A real alert takes over from wide mode, if it was listening.
+        // A real alert takes over from wide mode, if it was listening. Its lines stay on
+        // screen so what wide mode did is not lost.
         val wasListening = listening
+        val tookOver = wasListening && wide
+        Settings.noteFriday(
+            app,
+            if (tookOver) "real alert took over - listening for 60 s" else "listening for 60 s",
+            fresh = !tookOver,
+        )
         wide = false
         onWide = null
-        mute = true
+        if (wasListening) unmuteBeeps(app)
+        muteStreams = ALERT_MUTE
+        longSilence = false
         windowMs = WINDOW_MS
         // A new alert: the word has to be said again, and the clip gets its one play.
         awake = false
@@ -148,7 +169,12 @@ object Friday {
         }
         Settings.noteFriday(app, "wide: light grab, listening for $secs s", fresh = true)
         wide = true
-        mute = false
+        muteStreams = if (Settings.wideMuteSystem(app)) {
+            listOf(AudioManager.STREAM_NOTIFICATION, AudioManager.STREAM_SYSTEM)
+        } else {
+            emptyList()
+        }
+        longSilence = Settings.wideLongSilence(app)
         awake = false
         clipPlayed = false
         listening = true
@@ -181,7 +207,7 @@ object Friday {
             endListening("cannot listen - recognizer would not start")
             return
         }
-        if (mute) muteBeeps(app)
+        muteBeeps(app)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
@@ -195,6 +221,13 @@ object Friday {
                 RecognizerIntent.EXTRA_BIASING_STRINGS,
                 ArrayList(Settings.fridayWords(app)),
             )
+        }
+        if (longSilence) {
+            // Fewer restarts, so fewer beeps. Google's recognizer may ignore these.
+            val ms = 10_000L
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, ms)
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, ms)
+            intent.putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_MINIMUM_LENGTH_MILLIS, ms)
         }
         runCatching { r.startListening(intent) }
             .onFailure { endListening("cannot listen - ${it.javaClass.simpleName}") }
@@ -410,11 +443,7 @@ object Friday {
     private fun muteBeeps(app: Context) {
         if (muted.isNotEmpty()) return
         val audio = app.getSystemService(AudioManager::class.java) ?: return
-        for (stream in listOf(
-            AudioManager.STREAM_MUSIC,
-            AudioManager.STREAM_NOTIFICATION,
-            AudioManager.STREAM_SYSTEM,
-        )) {
+        for (stream in muteStreams) {
             if (runCatching { audio.adjustStreamVolume(stream, AudioManager.ADJUST_MUTE, 0) }.isSuccess) {
                 muted += stream
             }

@@ -56,6 +56,8 @@ object Settings {
     private const val WIDE_SENSITIVITY = "wide_sensitivity"
     private const val WIDE_BUZZ = "wide_buzz"
     private const val WIDE_LISTEN = "wide_listen"
+    private const val WIDE_MUTE_SYSTEM = "wide_mute_system"
+    private const val WIDE_LONG_SILENCE = "wide_long_silence"
     private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
     private const val DETECTOR = "detector"
@@ -463,6 +465,20 @@ object Settings {
 
     fun setWideListenSeconds(context: Context, value: Int) {
         of(context).edit().putInt(WIDE_LISTEN, value.coerceIn(10, 300)).apply()
+    }
+
+    /** Wide mode mutes notification and system sounds (not music) while listening. Off by default. */
+    fun wideMuteSystem(context: Context): Boolean = of(context).getBoolean(WIDE_MUTE_SYSTEM, false)
+
+    fun setWideMuteSystem(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(WIDE_MUTE_SYSTEM, value).apply()
+    }
+
+    /** Wide mode asks the recognizer to wait longer before restarting. Off by default. */
+    fun wideLongSilence(context: Context): Boolean = of(context).getBoolean(WIDE_LONG_SILENCE, false)
+
+    fun setWideLongSilence(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(WIDE_LONG_SILENCE, value).apply()
     }
 
     /** One short buzz when wide mode starts listening. Off by default. */
