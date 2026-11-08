@@ -52,6 +52,9 @@ object Settings {
     private const val STRAP_VIBRATE = "strap_vibrate"
     private const val STRAP_LISTEN = "strap_listen"
     private const val STRAP_DELAY = "strap_delay"
+    private const val WIDE = "wide"
+    private const val WIDE_SENSITIVITY = "wide_sensitivity"
+    private const val WIDE_BUZZ = "wide_buzz"
     private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
     private const val DETECTOR = "detector"
@@ -433,6 +436,31 @@ object Settings {
 
     fun setStrapListen(context: Context, value: Boolean) {
         of(context).edit().putBoolean(STRAP_LISTEN, value).apply()
+    }
+
+    /**
+     * Wide mode: a second, more sensitive grab detector that never locks. It only opens the
+     * microphone, and the F.R.I.D.A.Y word then starts theft mode. Off by default.
+     */
+    fun wide(context: Context): Boolean = of(context).getBoolean(WIDE, false)
+
+    fun setWide(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(WIDE, value).apply()
+    }
+
+    /** Wide mode's own slider, independent of the grab sensitivity. Starts at the most sensitive end. */
+    fun wideSensitivity(context: Context): Float =
+        of(context).getFloat(WIDE_SENSITIVITY, 1f).coerceIn(0f, 1f)
+
+    fun setWideSensitivity(context: Context, value: Float) {
+        of(context).edit().putFloat(WIDE_SENSITIVITY, value.coerceIn(0f, 1f)).apply()
+    }
+
+    /** One short buzz when wide mode starts listening. Off by default. */
+    fun wideBuzz(context: Context): Boolean = of(context).getBoolean(WIDE_BUZZ, false)
+
+    fun setWideBuzz(context: Context, value: Boolean) {
+        of(context).edit().putBoolean(WIDE_BUZZ, value).apply()
     }
 
     /** Seconds before the location goes out on a strap alert. */

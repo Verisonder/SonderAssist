@@ -58,6 +58,16 @@ object Friday {
     private val muted = mutableListOf<Int>()
 
     /**
+     * Wide mode is listening: nothing has fired, a lighter grab only opened the microphone.
+     * Hearing the word hands the command to [onWide] (theft mode) instead of acting here.
+     */
+    private var wide = false
+    private var onWide: ((Command) -> Unit)? = null
+
+    /** Muting hides the recognizer's beep. Wide mode opens the mic often, so it leaves music alone. */
+    private var mute = true
+
+    /**
      * The trigger word has been heard during this alert. From then on a bare "10 seconds"
      * is a command too, and the word alone does not play the clip again.
      */
@@ -89,12 +99,56 @@ object Friday {
             return
         }
         Settings.noteFriday(app, "listening for 60 s", fresh = true)
+        // A real alert takes over from wide mode, if it was listening.
+        val wasListening = listening
+        wide = false
+        onWide = null
+        mute = true
         // A new alert: the word has to be said again, and the clip gets its one play.
         awake = false
         clipPlayed = false
         listening = true
         extend(app)
+        if (wasListening) recognizer?.runCatching { cancel() }
         startOnce()
+    }
+
+    /**
+     * Wide mode: a lighter grab, nothing locked. Listen for a minute; the word calls
+     * [onWord], which starts theft mode. Another light grab while listening adds a minute.
+     * Does nothing while a real alert is already listening. True only when it newly
+     * started listening.
+     */
+    fun listenWide(context: Context, onWord: (Command) -> Unit): Boolean {
+        val app = context.applicationContext
+        this.app = app
+        if (listening && !wide) return false
+        if (countdown != null || sirenOn) return false
+        if (ContextCompat.checkSelfPermission(app, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            Settings.noteFriday(app, "wide: cannot listen - microphone not allowed", fresh = true)
+            return false
+        }
+        if (!SpeechRecognizer.isRecognitionAvailable(app)) {
+            Settings.noteFriday(app, "wide: cannot listen - no speech recognition", fresh = true)
+            return false
+        }
+        onWide = onWord
+        if (listening) {
+            Settings.noteFriday(app, "wide: moved again, 60 s more")
+            extend(app)
+            return false
+        }
+        Settings.noteFriday(app, "wide: light grab, listening for 60 s", fresh = true)
+        wide = true
+        mute = false
+        awake = false
+        clipPlayed = false
+        listening = true
+        extend(app)
+        startOnce()
+        return true
     }
 
     private fun extend(app: Context) {
@@ -121,7 +175,7 @@ object Friday {
             endListening("cannot listen - recognizer would not start")
             return
         }
-        muteBeeps(app)
+        if (mute) muteBeeps(app)
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
             .putExtra(RecognizerIntent.EXTRA_LANGUAGE, "en-US")
@@ -159,6 +213,14 @@ object Friday {
                 return
             }
             Settings.noteFriday(app, "heard \"${heard.first().take(40)}\"")
+            if (wide) {
+                // Wide mode does not act itself: the service starts theft mode, which
+                // listens again as a real alert.
+                val then = onWide
+                endListening(null)
+                then?.invoke(command)
+                return
+            }
             act(app, command, byVoice = true)
         }
 
@@ -198,6 +260,8 @@ object Friday {
     private fun endListening(why: String?) {
         val app = app
         listening = false
+        wide = false
+        onWide = null
         recognizer?.runCatching { cancel(); destroy() }
         recognizer = null
         app?.let { unmuteBeeps(it) }

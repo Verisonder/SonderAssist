@@ -128,6 +128,9 @@ fun AppRoot(activity: ComponentActivity) {
     var fullScreen by remember { mutableStateOf(canUseFullScreen(activity)) }
     var guardAlert by remember { mutableStateOf(Settings.guardAlert(activity)) }
     var uprightGuard by remember { mutableStateOf(Settings.uprightGuard(activity)) }
+    var wide by remember { mutableStateOf(Settings.wide(activity)) }
+    var wideSensitivity by remember { mutableFloatStateOf(Settings.wideSensitivity(activity)) }
+    var wideBuzz by remember { mutableStateOf(Settings.wideBuzz(activity)) }
     var whichDetector by remember { mutableStateOf(Settings.detector(activity)) }
     var learn by remember { mutableStateOf(Settings.learn(activity)) }
     var learnCounts by remember { mutableStateOf(AlertLog.counts(activity)) }
@@ -482,6 +485,7 @@ fun AppRoot(activity: ComponentActivity) {
                         Settings.Detector.V2 -> "v2"
                         Settings.Detector.BOTH -> "v1 + v2"
                     } + " · ${(sensitivity * 100).toInt()}%" +
+                        (if (wide) " · wide" else "") +
                         (if (learn) " · learning" else "") +
                         (if (learn && learnCounts.unanswered > 0) " · ${learnCounts.unanswered} to answer" else ""),
                 ) { page = Page.Detection }
@@ -610,6 +614,86 @@ fun AppRoot(activity: ComponentActivity) {
                             .format(com.verisonder.sonderassist.detect.SnatchDetector.Tuning.V2_MIN_SHAKE),
                         style = MaterialTheme.typography.bodyMedium,
                     )
+                }
+
+                // Wide mode: a second, more sensitive v1 that never locks. A lighter grab
+                // only opens the microphone for a minute; the F.R.I.D.A.Y word turns it into
+                // a full theft with the clip. Music is not muted (it opens often), so the
+                // recognizer's beep may be heard. The trail is the shared "What it heard".
+                Spacer(Modifier.height(24.dp))
+                SectionLabel("Wide mode")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Listen on a lighter grab", style = MaterialTheme.typography.bodyLarge)
+                        Text(
+                            "Say \"${fridayWords.first()}\" for theft mode. Never locks alone.",
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                    Switch(
+                        checked = wide,
+                        onCheckedChange = {
+                            wide = it
+                            Settings.setWide(activity, it)
+                            WatchService.retune(activity)
+                            if (it && !hasMic) {
+                                askMic.launch(android.Manifest.permission.RECORD_AUDIO)
+                            }
+                        },
+                    )
+                }
+                if (wide) {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Wide sensitivity ${(wideSensitivity * 100).toInt()}%",
+                        style = MaterialTheme.typography.bodyLarge,
+                    )
+                    Slider(
+                        value = wideSensitivity,
+                        onValueChange = { wideSensitivity = it },
+                        onValueChangeFinished = {
+                            Settings.setWideSensitivity(activity, wideSensitivity)
+                            WatchService.retune(activity)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    val wideTuned = remember(wideSensitivity) {
+                        com.verisonder.sonderassist.detect.SnatchDetector.Tuning
+                            .forSensitivity(wideSensitivity)
+                    }
+                    Text(
+                        "Needs %,.0f, or %,.0f with a twist."
+                            .format(wideTuned.axialJerk, wideTuned.axialJerkWithRotation),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Buzz when it listens", style = MaterialTheme.typography.bodyLarge)
+                            Text("One short buzz.", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        Switch(
+                            checked = wideBuzz,
+                            onCheckedChange = {
+                                wideBuzz = it
+                                Settings.setWideBuzz(activity, it)
+                            },
+                        )
+                    }
+                    if (!hasMic) {
+                        Spacer(Modifier.height(4.dp))
+                        Text("Needs the microphone.", style = MaterialTheme.typography.bodyMedium)
+                    }
+                    Spacer(Modifier.height(8.dp))
+                    Text("What it heard", style = MaterialTheme.typography.bodyLarge)
+                    Spacer(Modifier.height(4.dp))
+                    Text(fridayNote ?: "Nothing yet.", style = MaterialTheme.typography.bodySmall)
                 }
 
                 // The alert log. Every grab alert is written down with the few seconds of

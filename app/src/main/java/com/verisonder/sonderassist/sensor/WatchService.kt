@@ -54,6 +54,9 @@ class WatchService : Service(), SensorEventListener {
     // Either may be absent: which ones run follows Settings.detector.
     private var detector: SnatchDetector? = null
     private var detector2: SnatchDetector? = null
+
+    /** Wide mode: more sensitive, never locks, only opens the microphone. Null when off. */
+    private var detectorWide: SnatchDetector? = null
     private var listening = false
 
     // The gyroscope arrives on its own schedule, so the latest reading is held and
@@ -376,6 +379,15 @@ class WatchService : Service(), SensorEventListener {
         } else {
             null
         }
+        detectorWide = if (Settings.wide(this)) {
+            // v1 at its own slider. No shake gate: the point is to catch the lighter ones.
+            SnatchDetector(
+                SnatchDetector.Tuning.forSensitivity(Settings.wideSensitivity(this))
+                    .copy(uprightMinGravityY = upright)
+            )
+        } else {
+            null
+        }
         // GAME rather than NORMAL. A grab transient lasts tens of milliseconds and NORMAL
         // (about 5 Hz) would step straight over it. FASTEST is not used because the extra
         // rate buys nothing at this scale and costs battery for the whole session.
@@ -419,9 +431,14 @@ class WatchService : Service(), SensorEventListener {
                 // averaged away.
                 val v1 = detector?.accept(sample)
                 val v2 = detector2?.accept(sample)
+                val w = detectorWide?.accept(sample)
                 lastVerdict = listOfNotNull(
                     v1?.let { "v1 " + words(it, "acceleration %.0f") },
                     v2?.let { "v2 " + words(it, "acceleration %.0f") },
+                    w?.let {
+                        "wide " + if (it is SnatchDetector.Verdict.Snatch) "listening"
+                        else words(it, "acceleration %.0f")
+                    },
                 ).joinToString(" · ")
                 if (v1 is SnatchDetector.Verdict.Snatch || v2 is SnatchDetector.Verdict.Snatch) {
                     lastFiredAt = System.currentTimeMillis()
@@ -432,6 +449,8 @@ class WatchService : Service(), SensorEventListener {
                     // locking.
                     if (Settings.learn(this)) runCatching { logAlert(by, hit) }
                     onSnatch(by)
+                } else if (w is SnatchDetector.Verdict.Snatch && !Settings.alertLive(this)) {
+                    onWide()
                 }
             }
         }
@@ -461,6 +480,24 @@ class WatchService : Service(), SensorEventListener {
     }
 
     private fun onSnatch(by: String) = fire("detected a grab ($by)", quiet = false)
+
+    /**
+     * Wide mode caught a lighter grab. Nothing locks; the microphone opens for a minute
+     * and the F.R.I.D.A.Y word turns it into a full theft, clip included. A countdown said
+     * with the word ("Friday 10 seconds") is started as well.
+     */
+    private fun onWide() {
+        val started = runCatching {
+            Friday.listenWide(this) { command ->
+                fire("wide mode: heard the word", quiet = false)
+                runCatching { Friday.command(this, Friday.Command.Play) }
+                if (command is Friday.Command.Countdown) {
+                    runCatching { Friday.command(this, command) }
+                }
+            }
+        }.getOrDefault(false)
+        if (started && Settings.wideBuzz(this)) runCatching { buzz(WIDE_PATTERN) }
+    }
 
     private fun words(verdict: SnatchDetector.Verdict, measure: String): String = when (verdict) {
         is SnatchDetector.Verdict.Idle -> "not in a hand"
@@ -641,7 +678,7 @@ class WatchService : Service(), SensorEventListener {
      * so both are needed — and `Vibrator` is only deprecated, not gone, which is why the
      * old path still works rather than needing a compatibility shim.
      */
-    private fun buzz() {
+    private fun buzz(pattern: LongArray = ALERT_PATTERN) {
         val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
             getSystemService(VibratorManager::class.java)?.defaultVibrator
         } else {
@@ -651,7 +688,7 @@ class WatchService : Service(), SensorEventListener {
         if (!vibrator.hasVibrator()) return
         // -1 is "do not repeat". A pattern that repeats would have to be stopped by
         // something, and there is nothing running at that point that could stop it.
-        val effect = VibrationEffect.createWaveform(ALERT_PATTERN, -1)
+        val effect = VibrationEffect.createWaveform(pattern, -1)
 
         // **The usage is the whole thing, not a detail.** A vibration with no usage is
         // unclassified, and an unclassified vibration from an app in the background is
@@ -822,6 +859,9 @@ class WatchService : Service(), SensorEventListener {
          */
         private val ALERT_PATTERN =
             longArrayOf(0, 120, 90, 120, 90, 450, 350, 120, 90, 120, 90, 450)
+
+        /** Wide mode starting to listen: one short beat, nothing like the alert. */
+        private val WIDE_PATTERN = longArrayOf(0, 80)
 
         /**
          * Whether the service is actually alive, as opposed to whether the person asked
