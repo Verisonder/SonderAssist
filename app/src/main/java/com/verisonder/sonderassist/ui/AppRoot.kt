@@ -131,6 +131,7 @@ fun AppRoot(activity: ComponentActivity) {
     var wide by remember { mutableStateOf(Settings.wide(activity)) }
     var wideSensitivity by remember { mutableFloatStateOf(Settings.wideSensitivity(activity)) }
     var wideBuzz by remember { mutableStateOf(Settings.wideBuzz(activity)) }
+    var wideListen by remember { mutableIntStateOf(Settings.wideListenSeconds(activity)) }
     var whichDetector by remember { mutableStateOf(Settings.detector(activity)) }
     var learn by remember { mutableStateOf(Settings.learn(activity)) }
     var learnCounts by remember { mutableStateOf(AlertLog.counts(activity)) }
@@ -500,7 +501,7 @@ fun AppRoot(activity: ComponentActivity) {
                 HorizontalDivider()
                 PageRow(
                     "Wide mode",
-                    if (wide) "${(wideSensitivity * 100).toInt()}%" + (if (wideBuzz) " · buzz" else "")
+                    if (wide) "${(wideSensitivity * 100).toInt()}% · ${wideListen} s" + (if (wideBuzz) " · buzz" else "")
                     else "Off",
                 ) { page = Page.Wide }
                 HorizontalDivider()
@@ -909,6 +910,16 @@ fun AppRoot(activity: ComponentActivity) {
                         "Needs %,.0f, or %,.0f with a twist."
                             .format(wideTuned.axialJerk, wideTuned.axialJerkWithRotation),
                         style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text("Listen for $wideListen seconds", style = MaterialTheme.typography.bodyLarge)
+                    Slider(
+                        value = wideListen.toFloat(),
+                        onValueChange = { wideListen = kotlin.math.round(it / 5f).toInt() * 5 },
+                        onValueChangeFinished = {
+                            Settings.setWideListenSeconds(activity, wideListen)
+                        },
+                        valueRange = 10f..300f,
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(

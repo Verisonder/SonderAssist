@@ -67,6 +67,9 @@ object Friday {
     /** Muting hides the recognizer's beep. Wide mode opens the mic often, so it leaves music alone. */
     private var mute = true
 
+    /** How long one listen lasts: [WINDOW_MS] after an alert, the owner's choice in wide mode. */
+    private var windowMs = WINDOW_MS
+
     /**
      * The trigger word has been heard during this alert. From then on a bare "10 seconds"
      * is a command too, and the word alone does not play the clip again.
@@ -104,6 +107,7 @@ object Friday {
         wide = false
         onWide = null
         mute = true
+        windowMs = WINDOW_MS
         // A new alert: the word has to be said again, and the clip gets its one play.
         awake = false
         clipPlayed = false
@@ -135,12 +139,14 @@ object Friday {
             return false
         }
         onWide = onWord
+        windowMs = Settings.wideListenSeconds(app) * 1000L
+        val secs = windowMs / 1000
         if (listening) {
-            Settings.noteFriday(app, "wide: moved again, 60 s more")
+            Settings.noteFriday(app, "wide: moved again, $secs s more")
             extend(app)
             return false
         }
-        Settings.noteFriday(app, "wide: light grab, listening for 60 s", fresh = true)
+        Settings.noteFriday(app, "wide: light grab, listening for $secs s", fresh = true)
         wide = true
         mute = false
         awake = false
@@ -152,10 +158,10 @@ object Friday {
     }
 
     private fun extend(app: Context) {
-        listenUntil = SystemClock.elapsedRealtime() + WINDOW_MS
+        listenUntil = SystemClock.elapsedRealtime() + windowMs
         // Handler timing does not run on a sleeping phone, and this phone is dark in a
         // thief's hand. Bounded to the window.
-        holdAwake(app, WINDOW_MS + 5_000)
+        holdAwake(app, windowMs + 5_000)
     }
 
     private fun startOnce() {

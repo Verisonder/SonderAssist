@@ -55,6 +55,7 @@ object Settings {
     private const val WIDE = "wide"
     private const val WIDE_SENSITIVITY = "wide_sensitivity"
     private const val WIDE_BUZZ = "wide_buzz"
+    private const val WIDE_LISTEN = "wide_listen"
     private const val CONNECTED = "connected"
     private const val UPRIGHT_GUARD = "upright_guard"
     private const val DETECTOR = "detector"
@@ -454,6 +455,14 @@ object Settings {
 
     fun setWideSensitivity(context: Context, value: Float) {
         of(context).edit().putFloat(WIDE_SENSITIVITY, value.coerceIn(0f, 1f)).apply()
+    }
+
+    /** How long wide mode listens after a light grab, in seconds. 10 to 300, default 60. */
+    fun wideListenSeconds(context: Context): Int =
+        of(context).getInt(WIDE_LISTEN, 60).coerceIn(10, 300)
+
+    fun setWideListenSeconds(context: Context, value: Int) {
+        of(context).edit().putInt(WIDE_LISTEN, value.coerceIn(10, 300)).apply()
     }
 
     /** One short buzz when wide mode starts listening. Off by default. */
